@@ -19,7 +19,6 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* Inicio */}
       <Tabs.Screen
         name="home"
         options={{
@@ -29,8 +28,6 @@ export default function TabLayout() {
           ),
         }}
       />
-
-      {/* Rutinas */}
       <Tabs.Screen
         name="routines"
         options={{
@@ -40,19 +37,15 @@ export default function TabLayout() {
           ),
         }}
       />
-
-      {/* Ejercicios */}
       <Tabs.Screen
         name="exercises"
         options={{
           title: 'Ejercicios',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="dumbbell" size={size} color={color} />
+            <Ionicons name="fitness" size={size} color={color} />
           ),
         }}
       />
-
-      {/* Comunidad */}
       <Tabs.Screen
         name="community"
         options={{
