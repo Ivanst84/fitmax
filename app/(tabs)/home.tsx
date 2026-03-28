@@ -1,79 +1,107 @@
-import { View, Text, FlatList, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
-import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import { colors, spacing, radius } from '../../constants/theme';
+// Ruta: app/(tabs)/home.tsx
+import { View, Text, FlatList, StyleSheet, TouchableOpacity, StatusBar, ActivityIndicator } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, typography } from '../../constants/theme';
 
-interface Rutina {
-  id: string;
-  nombre: string;
-  descripcion: string;
-  dia_semana: number;
-  duracion_min: number;
-}
+// Importamos el Hook que contiene toda la lógica y la interfaz
+import { useRoutines } from '../../hooks/useRoutines';
 
-const DIAS = ['','Lunes','Miércoles','Viernes','Jueves','Sábado'];
-const router = useRouter();
+const DIAS = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 export default function HomeScreen() {
-  const [rutinas, setRutinas] = useState<Rutina[]>([]);
-  const [cargando, setCargando] = useState(true);
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  
+  // 🔥 AQUÍ ESTÁ LA MAGIA: Toda la lógica de Supabase viene de esta sola línea
+  const { rutinas, cargando, error, refetch } = useRoutines();
 
-  useEffect(() => { cargarRutinas(); }, []);
-
-  const cargarRutinas = async () => {
-    const { data } = await supabase
-      .from('RUTINAS')
-      .select('*')
-      .order('dia_semana', { ascending: true });
-    setRutinas(data || []);
-    setCargando(false);
-  };
+  // Si hay un error, mostramos una pantalla premium de error
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent, { paddingTop: Math.max(insets.top, spacing.xl) }]}>
+        <Ionicons name="alert-circle-outline" size={48} color={colors.error} />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={refetch} activeOpacity={0.7}>
+          <Text style={styles.retryButtonText}>Reintentar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
-    <View style={s.container}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, spacing.xl) }]}>
       <StatusBar barStyle="light-content" />
-      <View style={s.header}>
+      
+      {/* Header Profile */}
+      <View style={styles.header}>
         <View>
-          <Text style={s.greeting}>Bienvenido 👋</Text>
-          <Text style={s.appName}>FitMax</Text>
+          <Text style={styles.greeting}>Bienvenido de vuelta 👋</Text>
+          <Text style={styles.appName}>FitMax</Text>
         </View>
-        <View style={s.avatar}>
-          <Text style={s.avatarText}>JD</Text>
+        <TouchableOpacity activeOpacity={0.7} style={styles.avatarContainer}>
+          <Text style={styles.avatarText}>JD</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Hero Banner - Progress */}
+      <View style={styles.banner}>
+        <Text style={styles.bannerTitle}>Semana 1 — Principiante</Text>
+        <Text style={styles.bannerSub}>3 días esta semana · 0 completados</Text>
+        
+        {/* Progress Bar Premium */}
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: '0%' }]} />
         </View>
       </View>
-      <View style={s.banner}>
-        <Text style={s.bannerTitle}>Semana 1 — Principiante</Text>
-        <Text style={s.bannerSub}>3 días esta semana · 0 completados</Text>
-        <View style={s.progressBar}>
-          <View style={[s.progressFill, { width: '0%' }]} />
-        </View>
+
+      {/* Content Section Header */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Tu plan semanal</Text>
+        <TouchableOpacity activeOpacity={0.7}>
+          <Text style={styles.seeAllText}>Ver todo</Text>
+        </TouchableOpacity>
       </View>
-      <Text style={s.sectionTitle}>Tu rutina de la semana</Text>
+
+      {/* Lista de Rutinas */}
       {cargando ? (
-        <Text style={s.loading}>Cargando...</Text>
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
       ) : (
-       <FlatList
+        <FlatList
           data={rutinas}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No tienes rutinas asignadas para esta semana.</Text>
+            </View>
+          )}
           renderItem={({ item }) => (
             <TouchableOpacity 
-              style={s.card} 
-              activeOpacity={0.8}
+              activeOpacity={0.7}
               onPress={() => router.push(`/rutina/${item.id}`)}
+              style={styles.card}
             >
-              {/* Contenido de la tarjeta que faltaba agregar */}
-              <View style={s.cardLeft}>
-                <View style={s.dayBadge}>
-                  <Text style={s.dayText}>{DIAS[item.dia_semana] || 'Día'}</Text>
+              <View style={styles.cardLeft}>
+                <View style={styles.dayBadge}>
+                  <Text style={styles.dayBadgeText}>
+                    {DIAS[item.dia_semana] || 'Día'}
+                  </Text>
                 </View>
-                <Text style={s.cardName}>{item.nombre}</Text>
-                <Text style={s.cardMeta}>{item.duracion_min} min</Text>
+                <Text style={styles.cardTitle}>{item.nombre}</Text>
+                
+                <View style={styles.cardMeta}>
+                  <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
+                  <Text style={styles.cardMetaText}>{item.duracion_min} min</Text>
+                </View>
               </View>
 
-              <View style={s.playBtn}>
-                <Text style={s.playIcon}>▶</Text>
+              <View style={styles.playButton}>
+                <Ionicons name="play" size={20} color={colors.textPrimary} style={styles.playIconOffset} />
               </View>
             </TouchableOpacity>
           )}
@@ -83,26 +111,198 @@ export default function HomeScreen() {
   );
 }
 
-const s = StyleSheet.create({
-  container: { flex:1, backgroundColor: colors.background, paddingHorizontal: spacing.lg, paddingTop: 60 },
-  header: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: spacing.lg },
-  greeting: { fontSize:14, color: colors.textSecondary },
-  appName: { fontSize:28, fontWeight:'bold', color: colors.primary },
-  avatar: { width:42, height:42, borderRadius: radius.full, backgroundColor: colors.primary, justifyContent:'center', alignItems:'center' },
-  avatarText: { color:'#fff', fontWeight:'bold', fontSize:14 },
-  banner: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg, borderLeftWidth:4, borderLeftColor: colors.primary },
-  bannerTitle: { fontSize:16, fontWeight:'bold', color: colors.textPrimary, marginBottom:4 },
-  bannerSub: { fontSize:13, color: colors.textSecondary, marginBottom:12 },
-  progressBar: { height:6, backgroundColor: colors.border, borderRadius: radius.sm },
-  progressFill: { height:6, backgroundColor: colors.primary, borderRadius: radius.sm },
-  sectionTitle: { fontSize:18, fontWeight:'bold', color: colors.textPrimary, marginBottom:14 },
-  loading: { color: colors.textSecondary, textAlign:'center', marginTop:40 },
-  card: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, marginBottom:12, flexDirection:'row', justifyContent:'space-between', alignItems:'center' },
-  cardLeft: { flex:1 },
-  dayBadge: { backgroundColor: colors.primaryFaded, paddingHorizontal:10, paddingVertical:3, borderRadius: radius.full, alignSelf:'flex-start', marginBottom:8 },
-  dayText: { color: colors.primary, fontSize:11, fontWeight:'700' },
-  cardName: { fontSize:16, fontWeight:'bold', color: colors.textPrimary, marginBottom:4 },
-  cardMeta: { fontSize:12, color: colors.textSecondary },
-  playBtn: { width:40, height:40, borderRadius: radius.full, backgroundColor: colors.primary, justifyContent:'center', alignItems:'center' },
-  playIcon: { color:'#fff', fontSize:14 },
+// ------------------------------------------------------------------
+// 🎨 ESTILOS PREMIUM (Estrictamente basados en constants/theme.ts)
+// ------------------------------------------------------------------
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.lg,
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  
+  // Header
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  greeting: {
+    ...typography.body,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  appName: {
+    ...typography.h1,
+    letterSpacing: -0.5,
+  },
+  avatarContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryFaded,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 77, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarText: {
+    color: colors.primary,
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+
+  // Banner
+  banner: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.xl,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.primary,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5, 
+  },
+  bannerTitle: {
+    ...typography.h3,
+    marginBottom: spacing.xs,
+  },
+  bannerSub: {
+    ...typography.body,
+    marginBottom: spacing.md,
+  },
+  progressTrack: {
+    height: 6,
+    width: '100%',
+    backgroundColor: colors.border,
+    borderRadius: radius.full,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+  },
+
+  // Section Header
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: spacing.md,
+  },
+  sectionTitle: {
+    ...typography.h2,
+    fontSize: 20,
+  },
+  seeAllText: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '600',
+  },
+
+  // List & Cards
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listContent: {
+    paddingBottom: 100, 
+  },
+  emptyContainer: {
+    paddingVertical: spacing.xl,
+    alignItems: 'center',
+  },
+  emptyText: {
+    ...typography.body,
+    textAlign: 'center',
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  cardLeft: {
+    flex: 1,
+  },
+  dayBadge: {
+    backgroundColor: colors.primaryFaded,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+    alignSelf: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  dayBadgeText: {
+    color: colors.primary,
+    fontSize: 10,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  cardTitle: {
+    ...typography.h3,
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardMetaText: {
+    ...typography.caption,
+    marginLeft: 4,
+  },
+  playButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  playIconOffset: {
+    marginLeft: 3,
+  },
+
+  // Error States
+  errorText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  retryButton: {
+    backgroundColor: colors.surfaceLight,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  retryButtonText: {
+    color: colors.textPrimary,
+    fontWeight: 'bold',
+  },
 });
