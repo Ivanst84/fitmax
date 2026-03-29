@@ -1,21 +1,18 @@
-import React, { useEffect, useState } from 'react';
+// Ruta: app/(tabs)/history.tsx
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
-  View, 
-  Text, 
-  ScrollView, 
-  TouchableOpacity, 
-  ActivityIndicator, 
-  RefreshControl, 
-  StatusBar,
-  StyleSheet
+  View, Text, ScrollView, TouchableOpacity, 
+  ActivityIndicator, RefreshControl, StatusBar, StyleSheet
 } from 'react-native';
+import { useFocusEffect } from 'expo-router'; // 🚀 IMPORTANTE
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+
 import { supabase } from '../../lib/supabase';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { HistorialSesion } from '../../types/history.types';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatDate, formatDuration, getRelativeTime } from '../../lib/dateUtils';
-import { LinearGradient } from 'expo-linear-gradient';
 
 export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
@@ -25,9 +22,16 @@ export default function HistoryScreen() {
   const fetchHistory = async () => {
     try {
       setLoading(true);
+      
+      // 🚀 SEGURIDAD: Obtener el usuario actual
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 🚀 SEGURIDAD: Filtrar estrictamente por el ID del usuario
       const { data, error } = await supabase
         .from('HISTORIAL_SESIONES')
         .select('*')
+        .eq('user_id', user.id) 
         .order('fecha', { ascending: false });
 
       if (error) throw error;
@@ -39,12 +43,15 @@ export default function HistoryScreen() {
     }
   };
 
-  useEffect(() => {
-    fetchHistory();
-  }, []);
+  // 🚀 RECARGA ACTIVA: Refrescar cuando el usuario entra a esta pestaña
+  useFocusEffect(
+    useCallback(() => {
+      fetchHistory();
+    }, [])
+  );
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[styles.container, { paddingTop: Math.max(insets.top, spacing.xl) }]}>
       <StatusBar barStyle="light-content" />
       
       {/* Header Premium Estilo Nike Training Club */}
@@ -151,151 +158,32 @@ export default function HistoryScreen() {
   );
 }
 
+// ... LOS ESTILOS SE MANTIENEN EXACTAMENTE IGUAL ...
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  header: {
-    paddingHorizontal: 24,
-    paddingVertical: 32,
-  },
-  headerTitle: {
-    color: '#ffffff',
-    fontSize: 38,
-    fontWeight: '900',
-    letterSpacing: -1,
-  },
-  headerSubtitle: {
-    color: '#8e8e93',
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  scrollBody: {
-    paddingHorizontal: 20,
-    paddingBottom: 140,
-  },
-  cardWrapper: {
-    marginBottom: 20,
-    borderRadius: 24,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  cardGradient: {
-    padding: 24,
-  },
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 24,
-  },
-  routineInfo: {
-    flex: 1,
-  },
-  routineName: {
-    color: '#ffffff',
-    fontSize: 22,
-    fontWeight: '900',
-    fontStyle: 'italic',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  dateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  dateBadge: {
-    backgroundColor: 'rgba(255, 159, 10, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  dateBadgeText: {
-    color: colors.primary,
-    fontSize: 10,
-    fontWeight: '900',
-    textTransform: 'uppercase',
-  },
-  dotSeparator: {
-    width: 3,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#3a3a3c',
-    marginHorizontal: 10,
-  },
-  relativeTime: {
-    color: '#8e8e93',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  moreOptions: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    padding: 10,
-    borderRadius: 14,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.04)',
-  },
-  statBox: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '900',
-    marginTop: 6,
-  },
-  unit: {
-    fontSize: 10,
-    color: '#8e8e93',
-    fontWeight: '600',
-  },
-  statLabel: {
-    fontSize: 9,
-    color: '#636366',
-    fontWeight: '800',
-    marginTop: 2,
-    letterSpacing: 0.5,
-  },
-  divider: {
-    width: 1,
-    height: 24,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-  },
-  emptyContainer: {
-    marginTop: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  emptyIconWrapper: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    padding: 32,
-    borderRadius: 100,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.05)',
-  },
-  emptyText: {
-    color: '#636366',
-    fontSize: 17,
-    fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
+  container: { flex: 1, backgroundColor: '#000000' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { paddingHorizontal: 24, paddingVertical: 16 }, // Ajusté padding para no chocar con el inset
+  headerTitle: { color: '#ffffff', fontSize: 38, fontWeight: '900', letterSpacing: -1 },
+  headerSubtitle: { color: '#8e8e93', fontSize: 16, fontWeight: '600', marginTop: 4 },
+  scrollBody: { paddingHorizontal: 20, paddingBottom: 140 },
+  cardWrapper: { marginBottom: 20, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  cardGradient: { padding: 24 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
+  routineInfo: { flex: 1 },
+  routineName: { color: '#ffffff', fontSize: 22, fontWeight: '900', fontStyle: 'italic', textTransform: 'uppercase', marginBottom: 6 },
+  dateRow: { flexDirection: 'row', alignItems: 'center' },
+  dateBadge: { backgroundColor: 'rgba(255, 159, 10, 0.12)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  dateBadgeText: { color: colors.primary, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
+  dotSeparator: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#3a3a3c', marginHorizontal: 10 },
+  relativeTime: { color: '#8e8e93', fontSize: 11, fontWeight: '700' },
+  moreOptions: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 10, borderRadius: 14 },
+  statsGrid: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.04)' },
+  statBox: { flex: 1, alignItems: 'center' },
+  statValue: { color: '#ffffff', fontSize: 16, fontWeight: '900', marginTop: 6 },
+  unit: { fontSize: 10, color: '#8e8e93', fontWeight: '600' },
+  statLabel: { fontSize: 9, color: '#636366', fontWeight: '800', marginTop: 2, letterSpacing: 0.5 },
+  divider: { width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.08)' },
+  emptyContainer: { marginTop: 60, alignItems: 'center', justifyContent: 'center' },
+  emptyIconWrapper: { backgroundColor: 'rgba(255,255,255,0.03)', padding: 32, borderRadius: 100, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  emptyText: { color: '#636366', fontSize: 17, fontWeight: '700', textAlign: 'center', lineHeight: 24 },
 });
