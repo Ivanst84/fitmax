@@ -1,5 +1,7 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Image } from 'react-native';
+import { useEffect, useState } from 'react';
 import { colors, spacing, radius } from '../../constants/theme';
+import { supabase } from '../../lib/supabase';
 
 const LOGROS = [
   { id:1, icon:'🔥', titulo:'Primera sesión', desc:'Completaste tu primer entrenamiento', desbloqueado:true },
@@ -9,27 +11,65 @@ const LOGROS = [
 ];
 
 export default function ProfileScreen() {
+  const [user, setUser] = useState<any>(null);
+  const [stats, setStats] = useState({ sesiones: 0, minutos: 0, calorias: 0 });
+
+  useEffect(() => {
+    cargarDatos();
+  }, []);
+
+  const cargarDatos = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUser(user);
+
+    if (user) {
+      const { data } = await supabase
+        .from('HISTORIAL_SESIONES')
+        .select('duracion_segundos, volumen_total_kg')
+        .eq('user_id', user.id);
+
+      if (data) {
+        setStats({
+          sesiones: data.length,
+          minutos: Math.round(data.reduce((acc, s) => acc + (s.duracion_segundos || 0), 0) / 60),
+          calorias: Math.round(data.reduce((acc, s) => acc + (s.volumen_total_kg || 0), 0)),
+        });
+      }
+    }
+  };
+
+  const nombre = user?.user_metadata?.full_name || 'Usuario';
+  const foto = user?.user_metadata?.avatar_url;
+  const iniciales = nombre.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+
+  const cerrarSesion = async () => {
+    await supabase.auth.signOut();
+  };
+
   return (
     <View style={s.container}>
       <StatusBar barStyle="light-content" />
       <ScrollView showsVerticalScrollIndicator={false}>
 
-        {/* Header perfil */}
         <View style={s.profileHeader}>
-          <View style={s.avatarBig}>
-            <Text style={s.avatarText}>JD</Text>
-          </View>
-          <Text style={s.userName}>Juan Doe</Text>
+          {foto ? (
+            <Image source={{ uri: foto }} style={s.avatarImg} />
+          ) : (
+            <View style={s.avatarBig}>
+              <Text style={s.avatarText}>{iniciales}</Text>
+            </View>
+          )}
+          <Text style={s.userName}>{nombre}</Text>
+          <Text style={s.userEmail}>{user?.email}</Text>
           <Text style={s.userLevel}>Principiante · Semana 1</Text>
           <TouchableOpacity style={s.editBtn}>
             <Text style={s.editText}>Editar perfil</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Stats */}
         <View style={s.statsGrid}>
           <View style={s.statCard}>
-            <Text style={s.statValue}>0</Text>
+            <Text style={s.statValue}>{stats.sesiones}</Text>
             <Text style={s.statLabel}>Sesiones</Text>
           </View>
           <View style={s.statCard}>
@@ -37,27 +77,25 @@ export default function ProfileScreen() {
             <Text style={s.statLabel}>Racha días</Text>
           </View>
           <View style={s.statCard}>
-            <Text style={s.statValue}>0</Text>
+            <Text style={s.statValue}>{stats.minutos}</Text>
             <Text style={s.statLabel}>Minutos</Text>
           </View>
           <View style={s.statCard}>
-            <Text style={s.statValue}>0</Text>
-            <Text style={s.statLabel}>Calorías</Text>
+            <Text style={s.statValue}>{stats.calorias}</Text>
+            <Text style={s.statLabel}>Vol. kg</Text>
           </View>
         </View>
 
-        {/* Suscripción */}
         <View style={s.subCard}>
           <View>
             <Text style={s.subTitle}>Plan Gratuito</Text>
             <Text style={s.subDesc}>Actualiza para acceso completo</Text>
           </View>
           <TouchableOpacity style={s.upgradeBtn}>
-            <Text style={s.upgradeText}>⚡ Premium</Text>
+            <Text style={s.upgradeText}>⚡ PLATINUM</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Logros */}
         <Text style={s.sectionTitle}>Logros</Text>
         <View style={s.logrosGrid}>
           {LOGROS.map(logro => (
@@ -69,11 +107,17 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Opciones */}
         <Text style={s.sectionTitle}>Configuración</Text>
-        {['Mis medidas', 'Historial de sesiones', 'Notificaciones', 'Cerrar sesión'].map(item => (
-          <TouchableOpacity key={item} style={s.optionRow}>
-            <Text style={[s.optionText, item === 'Cerrar sesión' && { color: colors.error }]}>{item}</Text>
+        {[
+          { label: 'Mis medidas', action: undefined },
+          { label: 'Historial de sesiones', action: undefined },
+          { label: 'Notificaciones', action: undefined },
+          { label: 'Cerrar sesión', action: cerrarSesion },
+        ].map(item => (
+          <TouchableOpacity key={item.label} style={s.optionRow} onPress={item.action}>
+            <Text style={[s.optionText, item.label === 'Cerrar sesión' && { color: colors.error }]}>
+              {item.label}
+            </Text>
             <Text style={s.optionArrow}>›</Text>
           </TouchableOpacity>
         ))}
@@ -87,9 +131,11 @@ export default function ProfileScreen() {
 const s = StyleSheet.create({
   container: { flex:1, backgroundColor: colors.background, paddingHorizontal: spacing.lg, paddingTop: 60 },
   profileHeader: { alignItems:'center', marginBottom: spacing.lg },
-  avatarBig: { width:80, height:80, borderRadius: radius.full, backgroundColor: colors.primary, justifyContent:'center', alignItems:'center', marginBottom: spacing.sm },
-  avatarText: { color:'#fff', fontWeight:'bold', fontSize:28 },
-  userName: { fontSize:22, fontWeight:'bold', color: colors.textPrimary, marginBottom:4 },
+  avatarBig: { width:88, height:88, borderRadius: radius.full, backgroundColor: colors.primary, justifyContent:'center', alignItems:'center', marginBottom: spacing.sm },
+  avatarImg: { width:88, height:88, borderRadius: radius.full, marginBottom: spacing.sm },
+  avatarText: { color:'#fff', fontWeight:'bold', fontSize:30 },
+  userName: { fontSize:22, fontWeight:'bold', color: colors.textPrimary, marginBottom:2 },
+  userEmail: { fontSize:13, color: colors.textMuted, marginBottom:4 },
   userLevel: { fontSize:14, color: colors.textSecondary, marginBottom: spacing.sm },
   editBtn: { borderWidth:1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical:6 },
   editText: { color: colors.textSecondary, fontSize:13 },

@@ -23,48 +23,51 @@ export function useRoutineDetail(id: string | undefined): UseRoutineDetailResult
     try {
       setCargando(true);
       setError(null);
-      
-      // 1. Obtener la Rutina
-      const { data: rutinaData, error: rutinaError } = await supabase
+
+      // 🚀 Magia Arquitectónica: 1 sola petición a la base de datos (JOIN Relacional)
+      // Pedimos la rutina y, entre paréntesis, le decimos que traiga sus hijos y los detalles de los hijos.
+      const { data, error: fetchError } = await supabase
         .from('RUTINAS')
-        .select('*')
+        .select(`
+          *,
+          RUTINA_EJERCICIOS (
+            id,
+            rutina_id,
+            ejercicio_id,
+            series,
+            reps,
+            orden,
+            descanso_seg,
+            EJERCICIOS (
+              nombre,
+              descripcion,
+              video_url,
+              duracion_seg
+            )
+          )
+        `)
         .eq('id', id)
         .single();
 
-      if (rutinaError) throw rutinaError;
+      if (fetchError) throw fetchError;
 
-      // 2. Obtener la relación RUTINA_EJERCICIOS (Nombre exacto de tu tabla)
-      const { data: relacionData, error: relacionError } = await supabase
-        .from('RUTINA_EJERCICIOS')
-        .select('*')
-        .eq('rutina_id', id)
-        .order('orden', { ascending: true });
+      // 1. Separamos la rutina de sus ejercicios para mantener tu interfaz intacta
+      const { RUTINA_EJERCICIOS, ...rutinaData } = data;
 
-      if (relacionError) throw relacionError;
-
-      // 3. Obtener info de EJERCICIOS
-      const ejercicioIds = relacionData.map(r => r.ejercicio_id);
-      const { data: ejerciciosData, error: infoError } = await supabase
-        .from('EJERCICIOS')
-        .select('*')
-        .in('id', ejercicioIds);
-
-      if (infoError) throw infoError;
-
-      // 4. Mapeo Seguro
-      const formatted: RutinaEjercicios[] = relacionData.map(rel => {
-        const info = ejerciciosData.find(e => e.id === rel.ejercicio_id);
-        return {
+      // 2. Mapeamos al formato que tu UI ya espera y ordenamos por la columna 'orden'
+      const formatted: RutinaEjercicios[] = (RUTINA_EJERCICIOS || [])
+        .sort((a: any, b: any) => a.orden - b.orden)
+        .map((rel: any) => ({
           id: String(rel.id),
           rutina_id: rel.rutina_id,
           ejercicio_id: rel.ejercicio_id,
           series: rel.series || 0,
           repeticiones: String(rel.reps || '0'),
-          ejercicio: info || { nombre: 'Ejercicio no encontrado', imagen_url: '' }
-        };
-      });
+          // Extraemos la información anidada del JOIN
+          ejercicio: rel.EJERCICIOS || { nombre: 'Ejercicio no encontrado', imagen_url: '' }
+        }));
 
-      setRutina(rutinaData);
+      setRutina(rutinaData as Rutina);
       setEjercicios(formatted);
 
     } catch (err: any) {

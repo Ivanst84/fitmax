@@ -1,6 +1,8 @@
 {
   "expo": {
-    "name": "fitmax-clean",
+     "scheme": "fitmax",
+    "name": "fitmax",
+
     "slug": "fitmax-clean",
     "version": "1.0.0",
     "sdkVersion": "54.0.0",

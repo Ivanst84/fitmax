@@ -1,21 +1,16 @@
 // Ruta: app/workout/session.tsx
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  Alert, 
-  StatusBar, 
-  ActivityIndicator, 
-  StyleSheet 
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View, Text, TouchableOpacity, ScrollView,
+  Alert, StatusBar, ActivityIndicator, StyleSheet
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics'; // 🚀 IMPORTACIÓN NUEVA
 
-import { colors } from '../../constants/theme';
+import { colors, spacing, radius } from '../../constants/theme';
 import { useRoutineDetail } from '../../hooks/useRoutineDetail';
 import { useWorkoutSession } from '../../hooks/useWorkoutSession';
 
@@ -23,28 +18,40 @@ export default function WorkoutSessionScreen() {
   const { rutinaId } = useLocalSearchParams<{ rutinaId: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  
-  const { rutina, ejercicios, cargando } = useRoutineDetail(rutinaId);
-  const { 
-    currentExercise, 
-    currentExerciseIndex, 
-    completedSets, 
-    toggleSet,
+
+  const { rutina, ejercicios, cargando } = useRoutineDetail(rutinaId as string);
+  const {
+    currentExercise,
+    currentExerciseIndex,
+    completedSets,
+    completeNextSet,
+    skipRest,
+    allSetsDone,
     totalExercises,
     restSeconds,
     isResting,
     goToNextExercise,
     goToPrevExercise,
-    finishAndSaveWorkout, // <-- Nuestra nueva función
-    isSaving              // <-- Nuestro estado de carga
+    finishAndSaveWorkout,
+    isSaving,
   } = useWorkoutSession(ejercicios);
 
+  // 🚀 ARQUITECTURA SENIOR: Cronómetro a prueba de Background
+  const startTimeRef = useRef(Date.now());
   const [totalSeconds, setTotalSeconds] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => setTotalSeconds(s => s + 1), 1000);
+    const interval = setInterval(() => {
+      // Calculamos el tiempo real basándonos en el reloj del sistema, no en los ciclos de React
+      const now = Date.now();
+      setElapsedSeconds(Math.floor((now - startTimeRef.current) / 1000));
+    }, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  const setElapsedSeconds = (seconds: number) => {
+    setTotalSeconds(seconds);
+  };
 
   const formatTime = (sec: number) => {
     const m = Math.floor(sec / 60);
@@ -52,199 +59,407 @@ export default function WorkoutSessionScreen() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // 🚀 Función maestra para terminar
+  // 🚀 Toque Premium: Vibración al completar serie
+  const handleCompleteSet = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    if (currentExercise) {
+      completeNextSet(currentExercise.id);
+    }
+  };
+
   const handleFinish = () => {
     Alert.alert(
-      "¡Misión Cumplida!",
-      "¿Deseas finalizar y guardar este entrenamiento en tu historial?",
+      '¡Misión Cumplida!',
+      '¿Deseas finalizar y guardar este entrenamiento?',
       [
-        { text: "Seguir entrenando", style: "cancel" },
-        { 
-          text: "Terminar y Guardar", 
+        { text: 'Seguir entrenando', style: 'cancel' },
+        {
+          text: 'Terminar y Guardar',
           onPress: async () => {
-            const success = await finishAndSaveWorkout(
-              rutinaId, 
-              rutina?.nombre || 'Rutina Personalizada', 
+            const ok = await finishAndSaveWorkout(
+              rutinaId as string,
+              rutina?.nombre || 'Rutina',
               totalSeconds
             );
-            
-            if (success) {
-              router.replace('/(tabs)/history'); // Navega al historial para ver la victoria
+            if (ok) {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              router.replace('/(tabs)/history'); // O donde sea tu historial
             } else {
-              Alert.alert("Error", "No se pudo guardar la sesión en la nube.");
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert('Error', 'No se pudo guardar. Intenta de nuevo.');
             }
-          } 
-        }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleClose = () => {
+    Alert.alert(
+      'Salir del entrenamiento',
+      'Tu progreso no se guardará si sales ahora.',
+      [
+        { text: 'Continuar entrenando', style: 'cancel' },
+        { 
+          text: 'Salir', 
+          style: 'destructive', 
+          onPress: () => router.back() 
+        },
       ]
     );
   };
 
   if (cargando || !currentExercise) {
     return (
-      <View style={styles.center}>
+      <View style={s.center}>
         <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
 
-  const allSetsDone = completedSets[currentExercise.id]?.every(s => s);
+  const setsDelEjercicio = completedSets[currentExercise.id] || [];
+  const seriesHechas = setsDelEjercicio.filter(Boolean).length;
+  const totalSeries = setsDelEjercicio.length;
 
   return (
-    <View style={styles.container}>
+    <View style={s.container}>
       <StatusBar barStyle="light-content" />
-      
-      {/* HEADER DINÁMICO */}
-      <LinearGradient colors={['#111111', 'transparent']} style={[styles.header, { paddingTop: insets.top }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn} disabled={isSaving}>
-          <Ionicons name="close" size={24} color="#fff" />
+
+      {/* ── HEADER ── */}
+      <LinearGradient
+        colors={['#111111', 'transparent']}
+        style={[s.header, { paddingTop: insets.top + 8 }]}
+      >
+        <TouchableOpacity style={s.closeBtn} onPress={handleClose} disabled={isSaving}>
+          <Ionicons name="close" size={22} color="#fff" />
         </TouchableOpacity>
-        
-        <View style={styles.timerWrapper}>
-          <Text style={styles.timerLabel}>SESIÓN ACTIVA</Text>
-          <Text style={styles.timerValue}>{formatTime(totalSeconds)}</Text>
+
+        <View style={s.timerBox}>
+          <Text style={s.timerLabel}>SESIÓN ACTIVA</Text>
+          <Text style={s.timerValue}>{formatTime(totalSeconds)}</Text>
         </View>
 
-        <TouchableOpacity onPress={handleFinish} style={styles.finishBtn} disabled={isSaving}>
-          <Text style={styles.finishBtnText}>FIN</Text>
+        <TouchableOpacity style={s.finishBtn} onPress={handleFinish} disabled={isSaving}>
+          <Text style={s.finishBtnText}>FIN</Text>
         </TouchableOpacity>
       </LinearGradient>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* INDICADOR DE PROGRESO */}
-        <View style={styles.progressRow}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          s.scroll,
+          { paddingBottom: insets.bottom + 160 }
+        ]}
+      >
+        {/* ── BARRA DE PROGRESO ── */}
+        <View style={s.progressRow}>
           {ejercicios.map((_, i) => (
-            <View key={i} style={[styles.dot, i === currentExerciseIndex ? styles.dotActive : i < currentExerciseIndex ? styles.dotDone : null]} />
+            <View
+              key={i}
+              style={[
+                s.dot,
+                i < currentExerciseIndex && s.dotDone,
+                i === currentExerciseIndex && s.dotActive,
+              ]}
+            />
           ))}
         </View>
+        <Text style={s.progressLabel}>
+          Ejercicio {currentExerciseIndex + 1} de {totalExercises}
+        </Text>
 
-        {/* TITULAR DEL EJERCICIO */}
-        <View style={styles.exerciseHeader}>
-          <Text style={styles.exerciseSub}>EJERCICIO {currentExerciseIndex + 1} DE {totalExercises}</Text>
-          <Text style={styles.exerciseTitle}>{currentExercise.ejercicio.nombre}</Text>
+        {/* ── NOMBRE DEL EJERCICIO ── */}
+        <View style={s.exerciseHeader}>
+          <Text style={s.exerciseSub}>AHORA</Text>
+          <Text style={s.exerciseName}>{currentExercise.ejercicio.nombre}</Text>
+          <Text style={s.exerciseMeta}>
+            {totalSeries} series · {currentExercise.repeticiones} reps · {currentExercise.descanso_seg || 60}s descanso
+          </Text>
         </View>
 
-        {/* LISTA DE SERIES TIPO 'CHECKLIST' */}
-        <View style={styles.tableCard}>
-          <View style={styles.tableLabels}>
-            <Text style={[styles.label, { flex: 1 }]}>SERIE</Text>
-            <Text style={[styles.label, { flex: 2, textAlign: 'center' }]}>OBJETIVO</Text>
-            <Text style={[styles.label, { flex: 1, textAlign: 'right' }]}>LISTO</Text>
+        {/* ── CÍRCULOS DE SERIES ── */}
+        <View style={s.card}>
+          <Text style={s.cardLabel}>SERIES</Text>
+          <View style={s.circlesRow}>
+            {setsDelEjercicio.map((done, i) => (
+              <View key={i} style={[s.circle, done && s.circleDone]}>
+                <Text style={[s.circleText, done && s.circleTextDone]}>
+                  {done ? '✓' : i + 1}
+                </Text>
+              </View>
+            ))}
           </View>
+          <Text style={s.seriesStatus}>
+            {seriesHechas < totalSeries
+              ? `Serie ${seriesHechas + 1} de ${totalSeries}`
+              : '¡Todas las series completadas!'}
+          </Text>
+        </View>
 
-          {completedSets[currentExercise.id]?.map((isDone, idx) => (
+        {/* ── ZONA DE ACCIÓN PRINCIPAL ── */}
+        {isResting ? (
+          /* DESCANSANDO */
+          <View style={s.restCard}>
+            <Text style={s.restTitle}>DESCANSA</Text>
+            <Text style={s.restTimer}>{restSeconds}s</Text>
+            <View style={s.restBarTrack}>
+              <View
+                style={[
+                  s.restBarFill,
+                  {
+                    width: `${(restSeconds / (currentExercise.descanso_seg || 60)) * 100}%`,
+                  },
+                ]}
+              />
+            </View>
+            <Text style={s.restSub}>
+              {seriesHechas < totalSeries
+                ? `Prepárate para la serie ${seriesHechas + 1}`
+                : 'Listo para el siguiente ejercicio'}
+            </Text>
             <TouchableOpacity 
-              key={idx}
-              onPress={() => toggleSet(currentExercise.id, idx)}
-              activeOpacity={0.7}
-              disabled={isSaving}
-              style={[styles.row, isDone && styles.rowDone]}
+              style={s.skipBtn} 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                skipRest();
+              }}
             >
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.setIndex, isDone && { color: colors.primary }]}>{idx + 1}</Text>
-              </View>
-              <View style={{ flex: 2 }}>
-                <Text style={styles.repsText}>{currentExercise.repeticiones} <Text style={styles.repsLabel}>REPS</Text></Text>
-              </View>
-              <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                <View style={[styles.checkCircle, isDone && styles.checkCircleDone]}>
-                  {isDone && <Ionicons name="checkmark" size={20} color="#000" />}
-                </View>
-              </View>
+              <Text style={s.skipText}>Saltar descanso →</Text>
             </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-
-      {/* FOOTER PERSISTENTE */}
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-        <LinearGradient colors={['rgba(28,28,30,0.9)', '#000000']} style={styles.restCard}>
-          <View style={styles.restInfo}>
-            <View style={[styles.restIconBox, isResting && { backgroundColor: colors.primary }]}>
-              <Ionicons name="timer" size={24} color={isResting ? "#000" : "#fff"} />
-            </View>
-            <View style={{ marginLeft: 16 }}>
-              <Text style={styles.restLabel}>DESCANSO</Text>
-              <Text style={[styles.restValue, isResting && { color: colors.primary }]}>
-                {isResting ? `${restSeconds}s` : '00s'}
-              </Text>
-            </View>
           </View>
-          
-          <View style={styles.navButtons}>
+        ) : allSetsDone ? (
+          /* TODAS LAS SERIES HECHAS → SIGUIENTE */
+          <View style={s.nextCard}>
+            <Text style={s.nextCardTitle}>
+              {currentExerciseIndex < totalExercises - 1
+                ? '¡Ejercicio completado!'
+                : '¡Último ejercicio! 🏆'}
+            </Text>
+            <TouchableOpacity
+              style={s.nextBtn}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                currentExerciseIndex < totalExercises - 1 ? goToNextExercise() : handleFinish();
+              }}
+            >
+              <Text style={s.nextBtnText}>
+                {currentExerciseIndex < totalExercises - 1
+                  ? 'Siguiente ejercicio →'
+                  : 'Terminar y guardar 🏆'}
+              </Text>
+            </TouchableOpacity>
             {currentExerciseIndex > 0 && (
-              <TouchableOpacity onPress={goToPrevExercise} style={styles.prevBtn} disabled={isSaving}>
-                <Ionicons name="arrow-back" size={20} color="#fff" />
+              <TouchableOpacity style={s.prevLink} onPress={goToPrevExercise}>
+                <Text style={s.prevLinkText}>← Ejercicio anterior</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity 
-              onPress={goToNextExercise}
-              disabled={currentExerciseIndex === totalExercises - 1 || isSaving}
-              style={[styles.nextBtn, allSetsDone && styles.nextBtnReady]}
-            >
-              <Text style={[styles.nextBtnText, allSetsDone && { color: '#000' }]}>SIGUIENTE</Text>
-              <Ionicons name="arrow-forward" size={16} color={allSetsDone ? "#000" : "#636366"} />
-            </TouchableOpacity>
           </View>
-        </LinearGradient>
-      </View>
+        ) : (
+          /* HACIENDO SERIES → BOTÓN PRINCIPAL */
+          <View style={s.actionCard}>
+            <Text style={s.actionHint}>
+              Cuando termines la serie, toca el botón
+            </Text>
+            <TouchableOpacity
+              style={s.completeBtn}
+              onPress={handleCompleteSet} // 🚀 Usamos la función con vibración
+              activeOpacity={0.8}
+            >
+              <Ionicons name="checkmark" size={28} color="#fff" />
+              <Text style={s.completeBtnText}>
+                Serie {seriesHechas + 1} completada
+              </Text>
+            </TouchableOpacity>
+            {currentExerciseIndex > 0 && (
+              <TouchableOpacity style={s.prevLink} onPress={goToPrevExercise}>
+                <Text style={s.prevLinkText}>← Ejercicio anterior</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
-      {/* 🚀 OVERLAY DE CARGA PREMIUM */}
+        {/* ── LISTA DE EJERCICIOS RESTANTES ── */}
+        {currentExerciseIndex < totalExercises - 1 && (
+          <View style={s.upNextCard}>
+            <Text style={s.upNextLabel}>DESPUÉS</Text>
+            {ejercicios.slice(currentExerciseIndex + 1).map((ej, i) => (
+              <View key={ej.id} style={s.upNextRow}>
+                <View style={s.upNextNum}>
+                  <Text style={s.upNextNumText}>{currentExerciseIndex + i + 2}</Text>
+                </View>
+                <Text style={s.upNextName}>{ej.ejercicio.nombre}</Text>
+                <Text style={s.upNextMeta}>{ej.series}×{ej.repeticiones}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+
+      {/* ── OVERLAY GUARDANDO ── */}
       {isSaving && (
-        <View style={styles.savingOverlay}>
+        <View style={s.savingOverlay}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.savingText}>GUARDANDO VICTORIA...</Text>
+          <Text style={s.savingText}>GUARDANDO SESIÓN...</Text>
         </View>
       )}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
-  
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingBottom: 24 },
-  closeBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1c1c1e', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  timerWrapper: { alignItems: 'center' },
-  timerLabel: { color: '#636366', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 2 },
-  timerValue: { color: '#fff', fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  finishBtn: { backgroundColor: colors.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 12 },
-  finishBtnText: { color: '#000', fontWeight: '900', fontSize: 12, textTransform: 'uppercase' },
 
-  scrollContent: { paddingHorizontal: 24, flex: 1, paddingBottom: 180 },
-  progressRow: { flexDirection: 'row', gap: 4, marginBottom: 32 },
+  // Header
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    alignItems: 'center', paddingHorizontal: spacing.lg, paddingBottom: spacing.lg,
+  },
+  closeBtn: {
+    width: 40, height: 40, borderRadius: radius.full,
+    backgroundColor: '#1c1c1e', justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  timerBox: { alignItems: 'center' },
+  timerLabel: { color: '#636366', fontSize: 9, fontWeight: '900', letterSpacing: 2 },
+  timerValue: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  finishBtn: {
+    backgroundColor: colors.primary, paddingHorizontal: 16,
+    paddingVertical: 8, borderRadius: radius.md,
+  },
+  finishBtnText: { color: '#000', fontWeight: '900', fontSize: 12 },
+
+  // Scroll
+  scroll: { paddingHorizontal: spacing.lg },
+
+  // Progreso
+  progressRow: { flexDirection: 'row', gap: 4, marginBottom: 6 },
   dot: { height: 4, flex: 1, borderRadius: 2, backgroundColor: '#1c1c1e' },
   dotActive: { backgroundColor: colors.primary },
   dotDone: { backgroundColor: '#fff' },
+  progressLabel: { fontSize: 12, color: '#636366', marginBottom: spacing.lg },
 
-  exerciseHeader: { marginBottom: 24 },
-  exerciseSub: { color: colors.primary, fontWeight: '900', fontSize: 12, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 },
-  exerciseTitle: { color: '#fff', fontSize: 40, fontWeight: '900', fontStyle: 'italic', textTransform: 'uppercase', lineHeight: 42 },
+  // Ejercicio
+  exerciseHeader: { marginBottom: spacing.lg },
+  exerciseSub: {
+    color: colors.primary, fontWeight: '900', fontSize: 11,
+    letterSpacing: 2, marginBottom: 4,
+  },
+  exerciseName: {
+    color: '#fff', fontSize: 36, fontWeight: '900',
+    fontStyle: 'italic', textTransform: 'uppercase', lineHeight: 38,
+    marginBottom: 6,
+  },
+  exerciseMeta: { color: '#636366', fontSize: 13 },
 
-  tableCard: { backgroundColor: 'rgba(28,28,30,0.5)', borderRadius: 32, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  tableLabels: { flexDirection: 'row', marginBottom: 16, paddingHorizontal: 8 },
-  label: { color: '#636366', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-  
-  row: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 24, marginBottom: 8, backgroundColor: 'rgba(0,0,0,0.4)', borderWidth: 1, borderColor: 'transparent' },
-  rowDone: { backgroundColor: 'rgba(255, 159, 10, 0.1)', borderColor: 'rgba(255, 159, 10, 0.3)' },
-  setIndex: { color: '#636366', fontWeight: '900', fontSize: 16 },
-  repsText: { color: '#fff', fontSize: 18, fontWeight: '900', textAlign: 'center' },
-  repsLabel: { fontSize: 12, color: '#636366', fontWeight: '600' },
-  checkCircle: { width: 32, height: 32, borderRadius: 16, borderWidth: 2, borderColor: '#2c2c2e', justifyContent: 'center', alignItems: 'center' },
-  checkCircleDone: { backgroundColor: colors.primary, borderColor: colors.primary },
+  // Círculos
+  card: {
+    backgroundColor: '#1c1c1e', borderRadius: radius.lg,
+    padding: spacing.lg, marginBottom: spacing.md,
+    alignItems: 'center',
+  },
+  cardLabel: {
+    color: '#636366', fontSize: 10, fontWeight: '900',
+    letterSpacing: 2, marginBottom: spacing.md,
+  },
+  circlesRow: { flexDirection: 'row', gap: 12, marginBottom: spacing.sm, flexWrap: 'wrap', justifyContent: 'center' },
+  circle: {
+    width: 60, height: 60, borderRadius: radius.full,
+    borderWidth: 2, borderColor: '#333',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  circleDone: { backgroundColor: colors.primary, borderColor: colors.primary },
+  circleText: { fontSize: 20, fontWeight: '900', color: '#636366' },
+  circleTextDone: { color: '#fff' },
+  seriesStatus: { fontSize: 13, color: '#636366' },
 
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 24 },
-  restCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 24, borderRadius: 36, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  restInfo: { flexDirection: 'row', alignItems: 'center' },
-  restIconBox: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#1c1c1e', justifyContent: 'center', alignItems: 'center' },
-  restLabel: { color: '#636366', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
-  restValue: { color: '#fff', fontSize: 24, fontWeight: '900', fontVariant: ['tabular-nums'] },
-  navButtons: { flexDirection: 'row', gap: 8 },
-  prevBtn: { backgroundColor: '#1c1c1e', padding: 16, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
-  nextBtn: { backgroundColor: '#1c1c1e', paddingHorizontal: 20, paddingVertical: 16, borderRadius: 16, flexDirection: 'row', alignItems: 'center' },
-  nextBtnReady: { backgroundColor: '#fff' },
-  nextBtnText: { color: '#636366', fontWeight: '900', fontSize: 12, marginRight: 8, textTransform: 'uppercase' },
+  // Descanso
+  restCard: {
+    backgroundColor: '#1c1c1e', borderRadius: radius.lg,
+    padding: spacing.lg, marginBottom: spacing.md, alignItems: 'center',
+  },
+  restTitle: {
+    color: colors.primary, fontSize: 11, fontWeight: '900',
+    letterSpacing: 2, marginBottom: 8,
+  },
+  restTimer: {
+    color: '#fff', fontSize: 72, fontWeight: '900', lineHeight: 80,
+  },
+  restBarTrack: {
+    width: '100%', height: 4, backgroundColor: '#333',
+    borderRadius: 2, marginBottom: spacing.sm, overflow: 'hidden',
+  },
+  restBarFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 2 },
+  restSub: { color: '#636366', fontSize: 13, marginBottom: spacing.md },
+  skipBtn: {
+    borderWidth: 1, borderColor: '#333', borderRadius: radius.full,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+  },
+  skipText: { color: '#636666', fontSize: 13 },
 
-  savingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
-  savingText: { color: colors.primary, marginTop: 16, fontWeight: '900', fontSize: 14, letterSpacing: 2 }
+  // Siguiente ejercicio
+  nextCard: {
+    backgroundColor: '#1c1c1e', borderRadius: radius.lg,
+    padding: spacing.lg, marginBottom: spacing.md, alignItems: 'center',
+  },
+  nextCardTitle: {
+    color: '#fff', fontSize: 18, fontWeight: '900', marginBottom: spacing.md,
+  },
+  nextBtn: {
+    backgroundColor: colors.success, borderRadius: radius.full,
+    paddingHorizontal: 32, paddingVertical: spacing.md,
+    width: '100%', alignItems: 'center',
+  },
+  nextBtnText: { color: '#fff', fontWeight: '900', fontSize: 16 },
+
+  // Botón completar serie
+  actionCard: {
+    backgroundColor: '#1c1c1e', borderRadius: radius.lg,
+    padding: spacing.lg, marginBottom: spacing.md, alignItems: 'center',
+  },
+  actionHint: { color: '#636366', fontSize: 13, marginBottom: spacing.md },
+  completeBtn: {
+    backgroundColor: colors.primary, borderRadius: radius.full,
+    paddingVertical: spacing.md, width: '100%',
+    flexDirection: 'row', justifyContent: 'center',
+    alignItems: 'center', gap: 8,
+  },
+  completeBtnText: { color: '#000', fontWeight: '900', fontSize: 18 }, // Mantuve el texto oscuro para mejor contraste con el naranja
+
+  // Link anterior
+  prevLink: { marginTop: spacing.md },
+  prevLinkText: { color: '#636366', fontSize: 13 },
+
+  // Lista de siguientes
+  upNextCard: {
+    backgroundColor: '#1c1c1e', borderRadius: radius.lg,
+    padding: spacing.lg, marginBottom: spacing.md,
+  },
+  upNextLabel: {
+    color: '#636366', fontSize: 10, fontWeight: '900',
+    letterSpacing: 2, marginBottom: spacing.sm,
+  },
+  upNextRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#2c2c2e',
+  },
+  upNextNum: {
+    width: 28, height: 28, borderRadius: radius.full,
+    backgroundColor: '#2c2c2e', justifyContent: 'center',
+    alignItems: 'center', marginRight: spacing.sm,
+  },
+  upNextNumText: { color: '#636366', fontSize: 12, fontWeight: '700' },
+  upNextName: { flex: 1, color: '#fff', fontSize: 14, fontWeight: '600' },
+  upNextMeta: { color: '#636366', fontSize: 12 },
+
+  // Overlay guardando
+  savingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center', alignItems: 'center', zIndex: 100,
+  },
+  savingText: {
+    color: colors.primary, marginTop: 16,
+    fontWeight: '900', fontSize: 14, letterSpacing: 2,
+  },
 });
