@@ -1,39 +1,43 @@
-// Ruta: hooks/useWorkoutSession.ts
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native'; // 🚀 NUEVO IMPORT
+import { AppState, AppStateStatus } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../lib/supabase';
 
-export function useWorkoutSession(ejercicios: any[]) {
+export function useWorkoutSession(ejerciciosIniciales: any[]) {
+  // 🚀 ESTADO ACTIVO: Clonamos los ejercicios para poder modificarlos en vivo (Ej: Regresiones)
+  const [activeExercises, setActiveExercises] = useState<any[]>([]);
+  
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [completedSets, setCompletedSets] = useState<Record<string, boolean[]>>({});
   
   const [restSeconds, setRestSeconds] = useState(0);
   const [isResting, setIsResting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSwapping, setIsSwapping] = useState(false); // 🚀 Para el botón de "Muy Difícil"
 
-  // 🚀 ARQUITECTURA SENIOR: Referencia absoluta del tiempo
+  // Referencia absoluta del tiempo para cuando la app va a segundo plano
   const restEndTimeRef = useRef<number | null>(null);
 
-  const totalExercises = ejercicios.length;
-  const currentExercise = ejercicios[currentExerciseIndex];
-
-  // Inicializa sets cuando cargan los ejercicios
+  // 1. Inicializar sesión
   useEffect(() => {
-    if (ejercicios.length > 0 && Object.keys(completedSets).length === 0) {
-      const initial: Record<string, boolean[]> = {};
-      ejercicios.forEach(ex => {
-        initial[ex.id] = new Array(ex.series).fill(false);
+    if (ejerciciosIniciales.length > 0 && activeExercises.length === 0) {
+      setActiveExercises(ejerciciosIniciales);
+      
+      const initialSets: Record<string, boolean[]> = {};
+      ejerciciosIniciales.forEach(ex => {
+        initialSets[ex.id] = new Array(ex.series || 3).fill(false);
       });
-      setCompletedSets(initial);
+      setCompletedSets(initialSets);
     }
-  }, [ejercicios]);
+  }, [ejerciciosIniciales]);
 
-  // 🚀 NUEVO: Sincronización cuando la app va a Background / Foreground
+  const totalExercises = activeExercises.length;
+  const currentExercise = activeExercises[currentExerciseIndex];
+
+  // 2. Cronómetro a prueba de Background (Segundo Plano)
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active' && isResting && restEndTimeRef.current) {
-        // Calculamos cuánto tiempo queda REALMENTE basándonos en el reloj absoluto
         const now = Date.now();
         const remaining = Math.round((restEndTimeRef.current - now) / 1000);
         
@@ -48,12 +52,9 @@ export function useWorkoutSession(ejercicios: any[]) {
       }
     });
 
-    return () => {
-      subscription.remove();
-    };
+    return () => subscription.remove();
   }, [isResting]);
 
-  // Timer de descanso (Visual en pantalla)
   useEffect(() => {
     if (!isResting || restSeconds <= 0) return;
 
@@ -76,32 +77,31 @@ export function useWorkoutSession(ejercicios: any[]) {
     return () => clearInterval(interval);
   }, [isResting, restSeconds]);
 
-  const getNextSetIndex = (exerciseId: string) => {
-    const sets = completedSets[exerciseId] || [];
+  // 3. Manejo de Series
+  const getNextSetIndex = (exerciseRelationId: string) => {
+    const sets = completedSets[exerciseRelationId] || [];
     return sets.findIndex(s => !s);
   };
 
-  const completeNextSet = useCallback((exerciseId: string) => {
+  const completeNextSet = useCallback((exerciseRelationId: string) => {
     if (isResting) return;
 
-    const nextIndex = getNextSetIndex(exerciseId);
+    const nextIndex = getNextSetIndex(exerciseRelationId);
     if (nextIndex === -1) return;
 
     setCompletedSets(prev => {
-      const sets = [...(prev[exerciseId] || [])];
+      const sets = [...(prev[exerciseRelationId] || [])];
       sets[nextIndex] = true;
-      return { ...prev, [exerciseId]: sets };
+      return { ...prev, [exerciseRelationId]: sets };
     });
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    const sets = completedSets[exerciseId] || [];
-    // Si la serie que acabamos de marcar era la última (solo quedaba 1 falsa antes)
+    const sets = completedSets[exerciseRelationId] || [];
     const isLastSet = sets.filter(s => !s).length === 1; 
 
     if (!isLastSet) {
       const descanso = currentExercise?.descanso_seg || 60;
-      // 🚀 Marcamos el tiempo futuro exacto en el que debe terminar el descanso
       restEndTimeRef.current = Date.now() + (descanso * 1000);
       setRestSeconds(descanso);
       setIsResting(true);
@@ -111,7 +111,7 @@ export function useWorkoutSession(ejercicios: any[]) {
   const skipRest = useCallback(() => {
     setRestSeconds(0);
     setIsResting(false);
-    restEndTimeRef.current = null; // Limpiamos la referencia
+    restEndTimeRef.current = null;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
@@ -119,6 +119,7 @@ export function useWorkoutSession(ejercicios: any[]) {
     ? (completedSets[currentExercise.id] || []).every(s => s)
     : false;
 
+  // 4. Navegación entre ejercicios
   const goToNextExercise = useCallback(() => {
     if (!allSetsDone || isResting) return;
     if (currentExerciseIndex < totalExercises - 1) {
@@ -136,6 +137,43 @@ export function useWorkoutSession(ejercicios: any[]) {
     }
   }, [currentExerciseIndex]);
 
+  // 🚀 5. MAGIA PREMIUM: Intercambio de Ejercicio (Regresión)
+  const swapExercise = async (relationId: string, newExerciseId: string) => {
+    try {
+      setIsSwapping(true);
+      
+      // Buscamos el nuevo ejercicio en la BD
+      const { data: newEj, error } = await supabase
+        .from('EJERCICIOS')
+        .select('*')
+        .eq('id', newExerciseId)
+        .single();
+
+      if (error || !newEj) throw error;
+
+      // Reemplazamos el ejercicio ACTIVO pero mantenemos su ID de relación
+      // ¡Esto hace que el progreso de las series (completedSets) se mantenga intacto!
+      setActiveExercises(prev => prev.map(item => {
+        if (item.id === relationId) {
+          return {
+            ...item,
+            ejercicio_id: newExerciseId,
+            ejercicio: newEj // Sobrescribimos la info visual con el nuevo
+          };
+        }
+        return item;
+      }));
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (e) {
+      console.error('Error al hacer swap del ejercicio:', e);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setIsSwapping(false);
+    }
+  };
+
+  // 6. Guardado del Historial
   const finishAndSaveWorkout = async (
     rutinaId: string,
     nombreRutina: string,
@@ -144,21 +182,22 @@ export function useWorkoutSession(ejercicios: any[]) {
     try {
       setIsSaving(true);
       const { data: { user }, error: authError } = await supabase.auth.getUser();
-      if (!user || authError) throw new Error('Sin sesión de usuario');
+      if (!user || authError) throw new Error('Sin sesión');
 
       let volumenTotal = 0;
       let setsTotales = 0;
 
-      const detalles = ejercicios.map(ex => {
+      // Usamos los activeExercises para guardar la versión fácil si el usuario la cambió
+      const detalles = activeExercises.map(ex => {
         const sets = completedSets[ex.id] || [];
         const hechos = sets.filter(Boolean).length;
         setsTotales += hechos;
-        const reps = parseInt(ex.repeticiones || '0');
-        // Cálculo de volumen: asumimos 10kg base por ahora (peso corporal)
+        const reps = parseInt(ex.repeticiones || '10');
+        
         volumenTotal += hechos * reps * 10; 
         
         return {
-          ejercicio_id: ex.ejercicio_id,
+          ejercicio_id: ex.ejercicio_id, // Guardará el ID del ejercicio regresionado
           nombre_ejercicio: ex.ejercicio.nombre,
           series_json: sets.map((done: boolean) => ({
             reps, kg: 10, completed: done
@@ -166,7 +205,7 @@ export function useWorkoutSession(ejercicios: any[]) {
         };
       });
 
-      // Insertamos el historial
+      // Insertar Sesión Madre
       const { data: sesion, error: sesionErr } = await supabase
         .from('HISTORIAL_SESIONES')
         .insert({
@@ -182,12 +221,11 @@ export function useWorkoutSession(ejercicios: any[]) {
 
       if (sesionErr) throw sesionErr;
 
-      // Insertamos los detalles (ejercicios)
+      // Insertar Detalles
       await supabase.from('HISTORIAL_EJERCICIOS').insert(
         detalles.map(d => ({ ...d, sesion_id: sesion.id }))
       );
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       return true;
     } catch (e: any) {
       console.error('Error guardando:', e.message);
@@ -211,5 +249,8 @@ export function useWorkoutSession(ejercicios: any[]) {
     goToPrevExercise,
     finishAndSaveWorkout,
     isSaving,
+    isSwapping, // Lo exponemos por si quieres deshabilitar el botón mientras carga
+    swapExercise, // Exponemos la función a la UI
+    ejerciciosActivos: activeExercises // Lista actualizada de ejercicios
   };
 }

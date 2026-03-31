@@ -1,22 +1,31 @@
 import { Tabs } from 'expo-router';
+import { Platform, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../../constants/theme';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  
+  // 🔥 CÁLCULO PREMIUM: Calculamos cuánto mide el obstáculo de abajo
+  // Si es Android, le damos el espacio del sistema + 10px extra de respiro
+  const paddingBottom = Platform.OS === 'android' ? insets.bottom + 10 : insets.bottom;
+  const height = Platform.OS === 'android' ? 65 + insets.bottom : 85;
+
   return (
     <Tabs
       screenOptions={{
-        tabBarStyle: {
-          backgroundColor: '#0F0F0F',
-          borderTopColor: '#333333',
-          height: 60,
-        },
-        tabBarActiveTintColor: '#FF4D00',
-        tabBarInactiveTintColor: '#AAAAAA',
         headerShown: false,
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-        },
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
+        tabBarStyle: [
+          styles.tabBar,
+          {
+            height: height,
+            paddingBottom: paddingBottom,
+          }
+        ],
+        tabBarLabelStyle: styles.label,
       }}
     >
       <Tabs.Screen
@@ -55,6 +64,24 @@ export default function TabLayout() {
           ),
         }}
       />
+      {/* Escondemos el tab de profile si se entra desde el Avatar de la Home */}
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }
+
+const styles = StyleSheet.create({
+  tabBar: {
+    backgroundColor: colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    elevation: 0, // Quitamos sombra rara en Android
+    shadowOpacity: 0, // Quitamos sombra rara en iOS
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
+  }
+});

@@ -1,189 +1,198 @@
-// Ruta: app/(tabs)/history.tsx
-import React, { useEffect, useState, useCallback } from 'react';
-import { 
-  View, Text, ScrollView, TouchableOpacity, 
-  ActivityIndicator, RefreshControl, StatusBar, StyleSheet
-} from 'react-native';
-import { useFocusEffect } from 'expo-router'; // 🚀 IMPORTANTE
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl, StyleSheet, StatusBar } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { colors, spacing, radius, typography } from '../../constants/theme';
-import { HistorialSesion } from '../../types/history.types';
 import { formatDate, formatDuration, getRelativeTime } from '../../lib/dateUtils';
 
-export default function HistoryScreen() {
-  const [loading, setLoading] = useState(true);
-  const [sessions, setSessions] = useState<HistorialSesion[]>([]);
-  const insets = useSafeAreaInsets();
+interface Sesion {
+  id: string;
+  nombre_rutina: string;
+  duracion_segundos: number;
+  volumen_total_kg: number;
+  sets_completados: number;
+  fecha: string;
+}
 
-  const fetchHistory = async () => {
+export default function HistoryScreen() {
+  const insets = useSafeAreaInsets();
+  const [sesiones, setSesiones] = useState<Sesion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [stats, setStats] = useState({ total: 0, minutos: 0, volumen: 0 });
+
+  const fetchHistory = useCallback(async () => {
     try {
-      setLoading(true);
-      
-      // 🚀 SEGURIDAD: Obtener el usuario actual
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 🚀 SEGURIDAD: Filtrar estrictamente por el ID del usuario
       const { data, error } = await supabase
         .from('HISTORIAL_SESIONES')
         .select('*')
-        .eq('user_id', user.id) 
-        .order('fecha', { ascending: false });
+        .eq('user_id', user.id)           // Solo las del usuario logueado
+        .order('fecha', { ascending: false })
+        .limit(50);
 
       if (error) throw error;
-      setSessions(data || []);
-    } catch (e) {
-      console.error('FitMax Architecture Error [History]:', e);
+
+      const datos = data || [];
+      setSesiones(datos);
+
+      // Calcular stats totales
+      const totalMin = datos.reduce((acc, s) => acc + Math.floor(s.duracion_segundos / 60), 0);
+      const totalVol = datos.reduce((acc, s) => acc + (s.volumen_total_kg || 0), 0);
+      setStats({ total: datos.length, minutos: totalMin, volumen: Math.round(totalVol) });
+
+    } catch (e: any) {
+      console.error('History error:', e.message);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
-  // 🚀 RECARGA ACTIVA: Refrescar cuando el usuario entra a esta pestaña
-  useFocusEffect(
-    useCallback(() => {
-      fetchHistory();
-    }, [])
-  );
+  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+
+  const onRefresh = () => { setRefreshing(true); fetchHistory(); };
 
   return (
     <View style={[styles.container, { paddingTop: Math.max(insets.top, spacing.xl) }]}>
       <StatusBar barStyle="light-content" />
-      
-      {/* Header Premium Estilo Nike Training Club */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>HISTORIAL</Text>
-        <Text style={styles.headerSubtitle}>Tus victorias acumuladas</Text>
+
+      <Text style={styles.title}>Historial</Text>
+      <Text style={styles.subtitle}>Tus victorias acumuladas</Text>
+
+      {/* Stats totales */}
+      <View style={styles.statsRow}>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats.total}</Text>
+          <Text style={styles.statLabel}>Sesiones</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats.minutos}</Text>
+          <Text style={styles.statLabel}>Minutos</Text>
+        </View>
+        <View style={styles.statCard}>
+          <Text style={styles.statValue}>{stats.volumen}</Text>
+          <Text style={styles.statLabel}>Kg totales</Text>
+        </View>
       </View>
 
-      {loading && sessions.length === 0 ? (
+      {loading && sesiones.length === 0 ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
       ) : (
-        <ScrollView 
-          contentContainerStyle={styles.scrollBody}
+        <ScrollView
           showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
           refreshControl={
-            <RefreshControl 
-              refreshing={loading} 
-              onRefresh={fetchHistory} 
-              tintColor={colors.primary} 
-            />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
         >
-          {sessions.length === 0 ? (
+          {sesiones.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconWrapper}>
-                <Ionicons name="trophy-outline" size={48} color={colors.primary} />
-              </View>
-              <Text style={styles.emptyText}>
-                El gimnasio te espera.{"\n"}Registra tu primera sesión.
-              </Text>
+              <Ionicons name="trophy-outline" size={56} color={colors.primary} />
+              <Text style={styles.emptyTitle}>Sin sesiones aún</Text>
+              <Text style={styles.emptyText}>Completa tu primer entrenamiento para verlo aquí</Text>
             </View>
           ) : (
-            sessions.map((session) => (
-              <TouchableOpacity 
-                key={session.id}
-                activeOpacity={0.85}
-                style={styles.cardWrapper}
-              >
-                <LinearGradient
-                  colors={['#1c1c1e', '#000000']}
-                  style={styles.cardGradient}
-                >
-                  <View style={styles.cardTop}>
-                    <View style={styles.routineInfo}>
-                      <Text style={styles.routineName} numberOfLines={1}>
-                        {session.nombre_rutina}
-                      </Text>
-                      <View style={styles.dateRow}>
-                        <View style={styles.dateBadge}>
-                          <Text style={styles.dateBadgeText}>
-                            {formatDate(session.fecha)}
-                          </Text>
-                        </View>
-                        <View style={styles.dotSeparator} />
-                        <Text style={styles.relativeTime}>
-                          {getRelativeTime(session.fecha)}
+            sesiones.map(sesion => (
+              <View key={sesion.id} style={styles.card}>
+
+                {/* Header */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <Text style={styles.cardNombre} numberOfLines={1}>
+                      {sesion.nombre_rutina}
+                    </Text>
+                    <View style={styles.dateRow}>
+                      <View style={styles.dateBadge}>
+                        <Text style={styles.dateBadgeText}>
+                          {formatDate(sesion.fecha)}
                         </Text>
                       </View>
-                    </View>
-                    <View style={styles.moreOptions}>
-                      <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+                      <Text style={styles.relativeTime}>
+                        {getRelativeTime(sesion.fecha)}
+                      </Text>
                     </View>
                   </View>
+                </View>
 
-                  {/* Stats Grid con Glassmorphism effect */}
-                  <View style={styles.statsGrid}>
-                    <View style={styles.statBox}>
-                      <Ionicons name="time-outline" size={18} color={colors.primary} />
-                      <Text style={styles.statValue}>
-                        {formatDuration(session.duracion_segundos)}
-                      </Text>
-                      <Text style={styles.statLabel}>TIEMPO</Text>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <View style={styles.statBox}>
-                      <Ionicons name="flame-outline" size={18} color={colors.primary} />
-                      <Text style={styles.statValue}>
-                        {session.volumen_total_kg} <Text style={styles.unit}>KG</Text>
-                      </Text>
-                      <Text style={styles.statLabel}>VOLUMEN</Text>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <View style={styles.statBox}>
-                      <Ionicons name="checkmark-circle-outline" size={18} color={colors.primary} />
-                      <Text style={styles.statValue}>
-                        {session.sets_completados}
-                      </Text>
-                      <Text style={styles.statLabel}>SETS</Text>
-                    </View>
+                {/* Stats de la sesión */}
+                <View style={styles.cardStats}>
+                  <View style={styles.cardStat}>
+                    <Ionicons name="time-outline" size={16} color={colors.primary} />
+                    <Text style={styles.cardStatValue}>
+                      {formatDuration(sesion.duracion_segundos)}
+                    </Text>
+                    <Text style={styles.cardStatLabel}>TIEMPO</Text>
                   </View>
-                </LinearGradient>
-              </TouchableOpacity>
+                  <View style={styles.divider} />
+                  <View style={styles.cardStat}>
+                    <Ionicons name="barbell-outline" size={16} color={colors.primary} />
+                    <Text style={styles.cardStatValue}>
+                      {sesion.volumen_total_kg} <Text style={styles.unit}>KG</Text>
+                    </Text>
+                    <Text style={styles.cardStatLabel}>VOLUMEN</Text>
+                  </View>
+                  <View style={styles.divider} />
+                  <View style={styles.cardStat}>
+                    <Ionicons name="checkmark-circle-outline" size={16} color={colors.primary} />
+                    <Text style={styles.cardStatValue}>{sesion.sets_completados}</Text>
+                    <Text style={styles.cardStatLabel}>SETS</Text>
+                  </View>
+                </View>
+
+              </View>
             ))
           )}
+          <View style={{ height: 100 }} />
         </ScrollView>
       )}
     </View>
   );
 }
 
-// ... LOS ESTILOS SE MANTIENEN EXACTAMENTE IGUAL ...
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000000' },
+  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.lg },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { paddingHorizontal: 24, paddingVertical: 16 }, // Ajusté padding para no chocar con el inset
-  headerTitle: { color: '#ffffff', fontSize: 38, fontWeight: '900', letterSpacing: -1 },
-  headerSubtitle: { color: '#8e8e93', fontSize: 16, fontWeight: '600', marginTop: 4 },
-  scrollBody: { paddingHorizontal: 20, paddingBottom: 140 },
-  cardWrapper: { marginBottom: 20, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  cardGradient: { padding: 24 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
-  routineInfo: { flex: 1 },
-  routineName: { color: '#ffffff', fontSize: 22, fontWeight: '900', fontStyle: 'italic', textTransform: 'uppercase', marginBottom: 6 },
-  dateRow: { flexDirection: 'row', alignItems: 'center' },
-  dateBadge: { backgroundColor: 'rgba(255, 159, 10, 0.12)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+
+  title: { ...typography.h1, fontSize: 32, marginBottom: 4 },
+  subtitle: { ...typography.body, marginBottom: spacing.lg },
+
+  statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
+  statCard: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.sm, alignItems: 'center' },
+  statValue: { fontSize: 20, fontWeight: '900', color: colors.primary },
+  statLabel: { fontSize: 10, color: colors.textSecondary, marginTop: 2, fontWeight: '600' },
+
+  scrollContent: { paddingBottom: 120 },
+
+  emptyContainer: { paddingTop: 60, alignItems: 'center', gap: spacing.md },
+  emptyTitle: { ...typography.h2, color: colors.textPrimary },
+  emptyText: { ...typography.body, textAlign: 'center', color: colors.textSecondary },
+
+  card: {
+    backgroundColor: colors.surface, borderRadius: radius.lg,
+    padding: spacing.lg, marginBottom: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: spacing.md },
+  cardHeaderLeft: { flex: 1 },
+  cardNombre: { color: '#fff', fontSize: 18, fontWeight: '900', textTransform: 'uppercase', marginBottom: 6 },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  dateBadge: { backgroundColor: colors.primaryFaded, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.sm },
   dateBadgeText: { color: colors.primary, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-  dotSeparator: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#3a3a3c', marginHorizontal: 10 },
-  relativeTime: { color: '#8e8e93', fontSize: 11, fontWeight: '700' },
-  moreOptions: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 10, borderRadius: 14 },
-  statsGrid: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.04)' },
-  statBox: { flex: 1, alignItems: 'center' },
-  statValue: { color: '#ffffff', fontSize: 16, fontWeight: '900', marginTop: 6 },
-  unit: { fontSize: 10, color: '#8e8e93', fontWeight: '600' },
-  statLabel: { fontSize: 9, color: '#636366', fontWeight: '800', marginTop: 2, letterSpacing: 0.5 },
-  divider: { width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.08)' },
-  emptyContainer: { marginTop: 60, alignItems: 'center', justifyContent: 'center' },
-  emptyIconWrapper: { backgroundColor: 'rgba(255,255,255,0.03)', padding: 32, borderRadius: 100, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  emptyText: { color: '#636366', fontSize: 17, fontWeight: '700', textAlign: 'center', lineHeight: 24 },
+  relativeTime: { color: colors.textMuted, fontSize: 11, fontWeight: '600' },
+
+  cardStats: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    backgroundColor: colors.background, borderRadius: radius.md, padding: spacing.md,
+  },
+  cardStat: { flex: 1, alignItems: 'center', gap: 4 },
+  cardStatValue: { color: '#fff', fontSize: 15, fontWeight: '900' },
+  cardStatLabel: { fontSize: 9, color: colors.textMuted, fontWeight: '800', letterSpacing: 0.5 },
+  unit: { fontSize: 10, color: colors.textSecondary },
+  divider: { width: 1, height: 28, backgroundColor: colors.border },
 });

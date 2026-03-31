@@ -1,189 +1,176 @@
-// Ruta: app/(tabs)/history.tsx
-import React, { useEffect, useState, useCallback } from 'react';
-import { 
-  View, Text, ScrollView, TouchableOpacity, 
-  ActivityIndicator, RefreshControl, StatusBar, StyleSheet
-} from 'react-native';
-import { useFocusEffect } from 'expo-router'; // 🚀 IMPORTANTE
+// Ruta: app/(tabs)/profile.tsx
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, Image } from 'react-native';
+import { useCallback, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router'; // 🚀 IMPORTAMOS useRouter
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 
+import { colors, spacing, radius } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
-import { colors, spacing, radius, typography } from '../../constants/theme';
-import { HistorialSesion } from '../../types/history.types';
-import { formatDate, formatDuration, getRelativeTime } from '../../lib/dateUtils';
 
-export default function HistoryScreen() {
-  const [loading, setLoading] = useState(true);
-  const [sessions, setSessions] = useState<HistorialSesion[]>([]);
-  const insets = useSafeAreaInsets();
+const LOGROS = [
+  { id:1, icon:'🔥', titulo:'Primera sesión', desc:'Completaste tu primer entrenamiento', desbloqueado:true },
+  { id:2, icon:'📅', titulo:'3 días seguidos', desc:'Entrenaste 3 días consecutivos', desbloqueado:false },
+  { id:3, icon:'💪', titulo:'10 sesiones', desc:'Completaste 10 entrenamientos', desbloqueado:false },
+  { id:4, icon:'⚡', titulo:'Mes completo', desc:'Entrenaste todo un mes', desbloqueado:false },
+];
 
-  const fetchHistory = async () => {
-    try {
-      setLoading(true);
-      
-      // 🚀 SEGURIDAD: Obtener el usuario actual
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+export default function ProfileScreen() {
+  const router = useRouter(); // 🚀 INICIALIZAMOS EL ROUTER
+  const [user, setUser] = useState<any>(null);
+  const [stats, setStats] = useState({ sesiones: 0, minutos: 0, calorias: 0 });
 
-      // 🚀 SEGURIDAD: Filtrar estrictamente por el ID del usuario
-      const { data, error } = await supabase
-        .from('HISTORIAL_SESIONES')
-        .select('*')
-        .eq('user_id', user.id) 
-        .order('fecha', { ascending: false });
-
-      if (error) throw error;
-      setSessions(data || []);
-    } catch (e) {
-      console.error('FitMax Architecture Error [History]:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 🚀 RECARGA ACTIVA: Refrescar cuando el usuario entra a esta pestaña
+  // Recarga los datos frescos cada vez que entras a la pestaña
   useFocusEffect(
     useCallback(() => {
-      fetchHistory();
+      cargarDatos();
     }, [])
   );
 
+  const cargarDatos = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setUser(user);
+
+    if (user) {
+      const { data } = await supabase
+        .from('HISTORIAL_SESIONES')
+        .select('duracion_segundos, volumen_total_kg')
+        .eq('user_id', user.id);
+
+      if (data) {
+        setStats({
+          sesiones: data.length,
+          minutos: Math.round(data.reduce((acc, s) => acc + (s.duracion_segundos || 0), 0) / 60),
+          calorias: Math.round(data.reduce((acc, s) => acc + (s.volumen_total_kg || 0), 0)),
+        });
+      }
+    }
+  };
+
+  const nombre = user?.user_metadata?.full_name || 'Usuario';
+  const foto = user?.user_metadata?.avatar_url;
+  const iniciales = nombre.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'U';
+
+  const cerrarSesion = async () => {
+    await supabase.auth.signOut();
+  };
+
   return (
-    <View style={[styles.container, { paddingTop: Math.max(insets.top, spacing.xl) }]}>
+    <View style={s.container}>
       <StatusBar barStyle="light-content" />
-      
-      {/* Header Premium Estilo Nike Training Club */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>HISTORIAL</Text>
-        <Text style={styles.headerSubtitle}>Tus victorias acumuladas</Text>
-      </View>
+      <ScrollView showsVerticalScrollIndicator={false}>
 
-      {loading && sessions.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator color={colors.primary} size="large" />
-        </View>
-      ) : (
-        <ScrollView 
-          contentContainerStyle={styles.scrollBody}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl 
-              refreshing={loading} 
-              onRefresh={fetchHistory} 
-              tintColor={colors.primary} 
-            />
-          }
-        >
-          {sessions.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <View style={styles.emptyIconWrapper}>
-                <Ionicons name="trophy-outline" size={48} color={colors.primary} />
-              </View>
-              <Text style={styles.emptyText}>
-                El gimnasio te espera.{"\n"}Registra tu primera sesión.
-              </Text>
-            </View>
+        <View style={s.profileHeader}>
+          {foto ? (
+            <Image source={{ uri: foto }} style={s.avatarImg} />
           ) : (
-            sessions.map((session) => (
-              <TouchableOpacity 
-                key={session.id}
-                activeOpacity={0.85}
-                style={styles.cardWrapper}
-              >
-                <LinearGradient
-                  colors={['#1c1c1e', '#000000']}
-                  style={styles.cardGradient}
-                >
-                  <View style={styles.cardTop}>
-                    <View style={styles.routineInfo}>
-                      <Text style={styles.routineName} numberOfLines={1}>
-                        {session.nombre_rutina}
-                      </Text>
-                      <View style={styles.dateRow}>
-                        <View style={styles.dateBadge}>
-                          <Text style={styles.dateBadgeText}>
-                            {formatDate(session.fecha)}
-                          </Text>
-                        </View>
-                        <View style={styles.dotSeparator} />
-                        <Text style={styles.relativeTime}>
-                          {getRelativeTime(session.fecha)}
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.moreOptions}>
-                      <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
-                    </View>
-                  </View>
-
-                  {/* Stats Grid con Glassmorphism effect */}
-                  <View style={styles.statsGrid}>
-                    <View style={styles.statBox}>
-                      <Ionicons name="time-outline" size={18} color={colors.primary} />
-                      <Text style={styles.statValue}>
-                        {formatDuration(session.duracion_segundos)}
-                      </Text>
-                      <Text style={styles.statLabel}>TIEMPO</Text>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <View style={styles.statBox}>
-                      <Ionicons name="flame-outline" size={18} color={colors.primary} />
-                      <Text style={styles.statValue}>
-                        {session.volumen_total_kg} <Text style={styles.unit}>KG</Text>
-                      </Text>
-                      <Text style={styles.statLabel}>VOLUMEN</Text>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <View style={styles.statBox}>
-                      <Ionicons name="checkmark-circle-outline" size={18} color={colors.primary} />
-                      <Text style={styles.statValue}>
-                        {session.sets_completados}
-                      </Text>
-                      <Text style={styles.statLabel}>SETS</Text>
-                    </View>
-                  </View>
-                </LinearGradient>
-              </TouchableOpacity>
-            ))
+            <View style={s.avatarBig}>
+              <Text style={s.avatarText}>{iniciales}</Text>
+            </View>
           )}
-        </ScrollView>
-      )}
+          <Text style={s.userName}>{nombre}</Text>
+          <Text style={s.userEmail}>{user?.email}</Text>
+          <Text style={s.userLevel}>Principiante · Semana 1</Text>
+          
+          {/* 🚀 AQUÍ ESTÁ EL BOTÓN CONECTADO A TU NUEVA PANTALLA */}
+          <TouchableOpacity 
+            style={s.editBtn} 
+            onPress={() => router.push('/edit-profile')}
+            activeOpacity={0.7}
+          >
+            <Text style={s.editText}>Editar perfil</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={s.statsGrid}>
+          <View style={s.statCard}>
+            <Text style={s.statValue}>{stats.sesiones}</Text>
+            <Text style={s.statLabel}>Sesiones</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={s.statValue}>0</Text>
+            <Text style={s.statLabel}>Racha días</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={s.statValue}>{stats.minutos}</Text>
+            <Text style={s.statLabel}>Minutos</Text>
+          </View>
+          <View style={s.statCard}>
+            <Text style={s.statValue}>{stats.calorias}</Text>
+            <Text style={s.statLabel}>Vol. kg</Text>
+          </View>
+        </View>
+
+        <View style={s.subCard}>
+          <View>
+            <Text style={s.subTitle}>Plan Gratuito</Text>
+            <Text style={s.subDesc}>Actualiza para acceso completo</Text>
+          </View>
+          <TouchableOpacity style={s.upgradeBtn}>
+            <Text style={s.upgradeText}>⚡ PLATINUM</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={s.sectionTitle}>Logros</Text>
+        <View style={s.logrosGrid}>
+          {LOGROS.map(logro => (
+            <View key={logro.id} style={[s.logroCard, !logro.desbloqueado && s.logroLocked]}>
+              <Text style={s.logroIcon}>{logro.desbloqueado ? logro.icon : '🔒'}</Text>
+              <Text style={[s.logroTitulo, !logro.desbloqueado && s.lockedText]}>{logro.titulo}</Text>
+              <Text style={s.logroDesc}>{logro.desc}</Text>
+            </View>
+          ))}
+        </View>
+
+        <Text style={s.sectionTitle}>Configuración</Text>
+        {[
+          { label: 'Mis medidas', action: undefined },
+          { label: 'Historial de sesiones', action: undefined },
+          { label: 'Notificaciones', action: undefined },
+          { label: 'Cerrar sesión', action: cerrarSesion },
+        ].map(item => (
+          <TouchableOpacity key={item.label} style={s.optionRow} onPress={item.action}>
+            <Text style={[s.optionText, item.label === 'Cerrar sesión' && { color: colors.error }]}>
+              {item.label}
+            </Text>
+            <Text style={s.optionArrow}>›</Text>
+          </TouchableOpacity>
+        ))}
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
     </View>
   );
 }
 
-// ... LOS ESTILOS SE MANTIENEN EXACTAMENTE IGUAL ...
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000000' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { paddingHorizontal: 24, paddingVertical: 16 }, // Ajusté padding para no chocar con el inset
-  headerTitle: { color: '#ffffff', fontSize: 38, fontWeight: '900', letterSpacing: -1 },
-  headerSubtitle: { color: '#8e8e93', fontSize: 16, fontWeight: '600', marginTop: 4 },
-  scrollBody: { paddingHorizontal: 20, paddingBottom: 140 },
-  cardWrapper: { marginBottom: 20, borderRadius: 24, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  cardGradient: { padding: 24 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 },
-  routineInfo: { flex: 1 },
-  routineName: { color: '#ffffff', fontSize: 22, fontWeight: '900', fontStyle: 'italic', textTransform: 'uppercase', marginBottom: 6 },
-  dateRow: { flexDirection: 'row', alignItems: 'center' },
-  dateBadge: { backgroundColor: 'rgba(255, 159, 10, 0.12)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  dateBadgeText: { color: colors.primary, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-  dotSeparator: { width: 3, height: 3, borderRadius: 2, backgroundColor: '#3a3a3c', marginHorizontal: 10 },
-  relativeTime: { color: '#8e8e93', fontSize: 11, fontWeight: '700' },
-  moreOptions: { backgroundColor: 'rgba(255,255,255,0.05)', padding: 10, borderRadius: 14 },
-  statsGrid: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 20, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.04)' },
-  statBox: { flex: 1, alignItems: 'center' },
-  statValue: { color: '#ffffff', fontSize: 16, fontWeight: '900', marginTop: 6 },
-  unit: { fontSize: 10, color: '#8e8e93', fontWeight: '600' },
-  statLabel: { fontSize: 9, color: '#636366', fontWeight: '800', marginTop: 2, letterSpacing: 0.5 },
-  divider: { width: 1, height: 24, backgroundColor: 'rgba(255,255,255,0.08)' },
-  emptyContainer: { marginTop: 60, alignItems: 'center', justifyContent: 'center' },
-  emptyIconWrapper: { backgroundColor: 'rgba(255,255,255,0.03)', padding: 32, borderRadius: 100, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  emptyText: { color: '#636366', fontSize: 17, fontWeight: '700', textAlign: 'center', lineHeight: 24 },
+const s = StyleSheet.create({
+  container: { flex:1, backgroundColor: colors.background, paddingHorizontal: spacing.lg, paddingTop: 60 },
+  profileHeader: { alignItems:'center', marginBottom: spacing.lg },
+  avatarBig: { width:88, height:88, borderRadius: radius.full, backgroundColor: colors.primary, justifyContent:'center', alignItems:'center', marginBottom: spacing.sm },
+  avatarImg: { width:88, height:88, borderRadius: radius.full, marginBottom: spacing.sm },
+  avatarText: { color:'#fff', fontWeight:'bold', fontSize:30 },
+  userName: { fontSize:22, fontWeight:'bold', color: colors.textPrimary, marginBottom:2 },
+  userEmail: { fontSize:13, color: colors.textMuted, marginBottom:4 },
+  userLevel: { fontSize:14, color: colors.textSecondary, marginBottom: spacing.sm },
+  editBtn: { borderWidth:1, borderColor: colors.border, borderRadius: radius.full, paddingHorizontal: spacing.md, paddingVertical:6 },
+  editText: { color: colors.textSecondary, fontSize:13 },
+  statsGrid: { flexDirection:'row', gap: spacing.sm, marginBottom: spacing.lg },
+  statCard: { flex:1, backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.sm, alignItems:'center' },
+  statValue: { fontSize:22, fontWeight:'bold', color: colors.primary },
+  statLabel: { fontSize:11, color: colors.textSecondary, marginTop:2, textAlign:'center' },
+  subCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: spacing.lg, borderWidth:1, borderColor: colors.primary },
+  subTitle: { fontSize:15, fontWeight:'bold', color: colors.textPrimary },
+  subDesc: { fontSize:12, color: colors.textSecondary },
+  upgradeBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical:8, borderRadius: radius.full },
+  upgradeText: { color:'#000', fontWeight:'bold', fontSize:13 },
+  sectionTitle: { fontSize:18, fontWeight:'bold', color: colors.textPrimary, marginBottom: spacing.sm },
+  logrosGrid: { flexDirection:'row', flexWrap:'wrap', gap: spacing.sm, marginBottom: spacing.lg },
+  logroCard: { width:'47%', backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.sm, alignItems:'center' },
+  logroLocked: { opacity:0.4 },
+  logroIcon: { fontSize:28, marginBottom:4 },
+  logroTitulo: { fontSize:13, fontWeight:'bold', color: colors.textPrimary, textAlign:'center', marginBottom:2 },
+  lockedText: { color: colors.textMuted },
+  logroDesc: { fontSize:11, color: colors.textSecondary, textAlign:'center' },
+  optionRow: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.md, flexDirection:'row', justifyContent:'space-between', marginBottom:8 },
+  optionText: { fontSize:15, color: colors.textPrimary },
+  optionArrow: { color: colors.textMuted, fontSize:18 },
 });

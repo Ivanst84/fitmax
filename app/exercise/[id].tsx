@@ -1,10 +1,17 @@
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator } from 'react-native';
+// Ruta: app/exercise/[id].tsx
+import { 
+  View, Text, StyleSheet, TouchableOpacity, 
+  ScrollView, StatusBar, ActivityIndicator 
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { supabase } from '../../lib/supabase';
-import { colors, spacing, radius } from '../../constants/theme';
+import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+
+import { supabase } from '../../lib/supabase';
+import { colors, spacing, radius, typography } from '../../constants/theme';
+import { getRelativeTime } from '../../lib/dateUtils'; // Ajusta la ruta si es necesario
 
 interface Ejercicio {
   id: string;
@@ -16,11 +23,18 @@ interface Ejercicio {
   duracion_seg: number;
   calorias_estimadas: number;
   es_premium: boolean;
+  regresion_de: string | null; // 🚀 NUEVO CAMPO AÑADIDO
+}
+
+interface HistorialPersonal {
+  max_peso: number;
+  ultima_vez: string | null;
+  total_sesiones: number;
 }
 
 const MUSCULOS: Record<number, string> = {
-  1: 'Pecho', 2: 'Espalda alta', 3: 'Espalda baja', 4: 'Hombros',
-  5: 'Bíceps', 6: 'Tríceps', 8: 'Abdomen', 11: 'Cuádriceps', 12: 'Isquiotibiales',
+  1: 'Pecho', 2: 'Espalda', 3: 'Espalda baja', 4: 'Hombros',
+  5: 'Bíceps', 6: 'Tríceps', 8: 'Abdomen', 10: 'Glúteos', 11: 'Piernas', 15: 'Cardio'
 };
 
 export default function ExerciseDetail() {
@@ -28,21 +42,61 @@ export default function ExerciseDetail() {
   const router = useRouter();
 
   const [ejercicio, setEjercicio] = useState<Ejercicio | null>(null);
+  const [historial, setHistorial] = useState<HistorialPersonal>({ max_peso: 0, ultima_vez: null, total_sesiones: 0 });
   const [cargando, setCargando] = useState(true);
   const [series, setSeries] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const TOTAL_SERIES = 3;
 
-  useEffect(() => { cargarEjercicio(); }, [id]);
+  useEffect(() => { 
+    cargarDatosCompletos(); 
+  }, [id]);
 
-  const cargarEjercicio = async () => {
-    const { data } = await supabase
-      .from('EJERCICIOS')
-      .select('*')
-      .eq('id', id)
-      .single();
-    setEjercicio(data);
-    setCargando(false);
+  const cargarDatosCompletos = async () => {
+    try {
+      setCargando(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // 1. Cargar datos del ejercicio (incluyendo regresion_de)
+      const { data: ejData } = await supabase
+        .from('EJERCICIOS')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      setEjercicio(ejData);
+
+      // 2. Cargar el historial personal
+      if (user && ejData) {
+        const { data: histData } = await supabase
+          .from('HISTORIAL_EJERCICIOS')
+          .select('series_json, HISTORIAL_SESIONES(fecha)')
+          .eq('ejercicio_id', id)
+          .order('created_at', { ascending: false });
+
+        if (histData && histData.length > 0) {
+          let maxKg = 0;
+          histData.forEach(sesion => {
+            const series = sesion.series_json as any[];
+            series?.forEach(serie => {
+              if (serie.completed && serie.kg > maxKg) {
+                maxKg = serie.kg;
+              }
+            });
+          });
+
+          setHistorial({
+            max_peso: maxKg,
+            ultima_vez: histData[0].HISTORIAL_SESIONES?.[0]?.fecha || null,
+            total_sesiones: histData.length
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Error cargando detalle:', e);
+    } finally {
+      setCargando(false);
+    }
   };
 
   const player = useVideoPlayer(
@@ -53,6 +107,25 @@ export default function ExerciseDetail() {
     }
   );
 
+  const toggleVideo = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isPlaying) player.pause();
+    else player.play();
+  };
+
+  const marcarSerie = (index: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSeries(index < series ? index : index + 1);
+  };
+
+  // 🚀 FUNCIÓN PARA CAMBIAR A LA VERSIÓN MÁS FÁCIL
+  const handleRegresion = () => {
+    if (ejercicio?.regresion_de) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      router.replace(`/exercise/${ejercicio.regresion_de}`);
+    }
+  };
+
   if (cargando) return (
     <View style={s.center}>
       <ActivityIndicator size="large" color={colors.primary} />
@@ -61,7 +134,8 @@ export default function ExerciseDetail() {
 
   if (!ejercicio) return (
     <View style={s.center}>
-      <Text style={{ color: colors.textSecondary }}>Ejercicio no encontrado</Text>
+      <Ionicons name="alert-circle-outline" size={48} color={colors.textMuted} />
+      <Text style={{ color: colors.textSecondary, marginTop: 16 }}>Ejercicio no encontrado</Text>
     </View>
   );
 
@@ -69,58 +143,40 @@ export default function ExerciseDetail() {
     <View style={s.container}>
       <StatusBar barStyle="light-content" />
 
-   {/* ==================== VIDEO PREMIUM ==================== */}
+      {/* Video Container */}
       <View style={s.videoContainer}>
         {ejercicio.video_url ? (
-          <TouchableOpacity 
-            activeOpacity={1} 
-            style={s.video} 
-            onPress={() => {
-              if (isPlaying) {
-                player.pause();
-              } else {
-                player.play();
-              }
-            }}
-          >
-            <VideoView
-              style={s.video}
-              player={player}
-              allowsFullscreen
-              allowsPictureInPicture
-              contentFit="contain"
-              nativeControls={false} // <-- Desactiva los controles nativos rebeldes
-            />
-            
-            {/* Capa oscura con botón de play cuando está pausado */}
+          <TouchableOpacity activeOpacity={1} style={s.video} onPress={toggleVideo}>
+            <VideoView style={s.video} player={player} allowsFullscreen allowsPictureInPicture contentFit="contain" nativeControls={false} />
             {!isPlaying && (
               <View style={s.playOverlay}>
-                <Ionicons name="play-circle" size={70} color="#ffffff99" />
+                <Ionicons name="play-circle" size={70} color="rgba(255,255,255,0.8)" />
               </View>
             )}
           </TouchableOpacity>
         ) : (
           <View style={s.videoPlaceholder}>
-            <Text style={s.videoPlaceholderIcon}>▶</Text>
-            <Text style={s.videoPlaceholderText}>Video próximamente</Text>
+            <Ionicons name="videocam-outline" size={48} color={colors.primary} style={{ opacity: 0.5 }} />
+            <Text style={s.videoPlaceholderText}>Video de técnica próximamente</Text>
           </View>
         )}
 
-        {/* Botón de regresar (se oculta al reproducir) */}
         {!isPlaying && (
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={22} color="#fff" />
+            <Ionicons name="close" size={24} color="#fff" />
           </TouchableOpacity>
         )}
       </View>
 
-      <ScrollView style={s.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={s.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+        
         <View style={s.infoHeader}>
           <View style={s.musculoBadge}>
             <Text style={s.musculoText}>{MUSCULOS[ejercicio.musculo_id] || 'General'}</Text>
           </View>
           {ejercicio.es_premium && (
             <View style={s.premiumBadge}>
+              <Ionicons name="star" size={12} color="#000" style={{marginRight: 4}} />
               <Text style={s.premiumText}>PRO</Text>
             </View>
           )}
@@ -128,64 +184,76 @@ export default function ExerciseDetail() {
 
         <Text style={s.nombre}>{ejercicio.nombre}</Text>
 
-        <View style={s.statsRow}>
-          <View style={s.stat}>
-            <Text style={s.statValue}>{TOTAL_SERIES}</Text>
-            <Text style={s.statLabel}>Series</Text>
-          </View>
-          <View style={s.statDivider} />
-          <View style={s.stat}>
-            <Text style={s.statValue}>12</Text>
-            <Text style={s.statLabel}>Reps</Text>
-          </View>
-          <View style={s.statDivider} />
-          <View style={s.stat}>
-            <Text style={s.statValue}>60s</Text>
-            <Text style={s.statLabel}>Descanso</Text>
-          </View>
-          <View style={s.statDivider} />
-          <View style={s.stat}>
-            <Text style={s.statValue}>{ejercicio.calorias_estimadas ?? '--'}</Text>
-            <Text style={s.statLabel}>Cal</Text>
+        {/* 🚀 BOTÓN DE REGRESIÓN (Si existe versión fácil) */}
+        {ejercicio.regresion_de && (
+          <TouchableOpacity style={s.regresionBtn} onPress={handleRegresion} activeOpacity={0.8}>
+            <Ionicons name="arrow-down-circle" size={20} color={colors.primary} />
+            <Text style={s.regresionText}>¿Muy difícil? Cambiar a versión fácil</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Historial */}
+        <View style={s.historyPanel}>
+          <Text style={s.historyTitle}>TU HISTORIAL</Text>
+          <View style={s.historyMetrics}>
+            <View style={s.historyMetricBox}>
+              <Ionicons name="trophy-outline" size={20} color={colors.primary} />
+              <View>
+                <Text style={s.historyMetricValue}>{historial.max_peso > 0 ? `${historial.max_peso} kg` : '--'}</Text>
+                <Text style={s.historyMetricLabel}>Récord (1RM)</Text>
+              </View>
+            </View>
+            <View style={s.historyDivider} />
+            <View style={s.historyMetricBox}>
+              <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
+              <View>
+                <Text style={s.historyMetricValue}>
+                  {historial.ultima_vez ? getRelativeTime(historial.ultima_vez) : 'Nunca'}
+                </Text>
+                <Text style={s.historyMetricLabel}>Última vez entrenado</Text>
+              </View>
+            </View>
           </View>
         </View>
 
+        {/* Instrucciones */}
         {ejercicio.descripcion && (
           <View style={s.section}>
-            <Text style={s.sectionTitle}>¿Cómo hacerlo?</Text>
+            <Text style={s.sectionTitle}>Técnica correcta</Text>
             <Text style={s.descripcion}>{ejercicio.descripcion}</Text>
           </View>
         )}
 
+        {/* Práctica */}
         <View style={s.section}>
-          <Text style={s.sectionTitle}>Progreso de series</Text>
+          <Text style={s.sectionTitle}>Práctica rápida</Text>
           <View style={s.seriesRow}>
             {Array.from({ length: TOTAL_SERIES }).map((_, i) => (
-              <TouchableOpacity
-                key={i}
-                style={[s.serieBtn, i < series && s.serieBtnDone]}
-                onPress={() => setSeries(i < series ? i : i + 1)}
-              >
-                <Text style={[s.serieBtnText, i < series && s.serieBtnTextDone]}>
-                  {i < series ? '✓' : i + 1}
-                </Text>
+              <TouchableOpacity key={i} style={[s.serieBtn, i < series && s.serieBtnDone]} onPress={() => marcarSerie(i)} activeOpacity={0.7}>
+                <Text style={[s.serieBtnText, i < series && s.serieBtnTextDone]}>{i < series ? '✓' : i + 1}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
 
+      </ScrollView>
+
+      {/* Footer Fijo */}
+      <View style={s.footer}>
         <TouchableOpacity
           style={[s.completarBtn, series < TOTAL_SERIES && s.completarBtnDisabled]}
           disabled={series < TOTAL_SERIES}
-          onPress={() => router.back()}
+          onPress={() => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            router.back();
+          }}
+          activeOpacity={0.85}
         >
-          <Text style={s.completarText}>
-            {series < TOTAL_SERIES ? `Completa las ${TOTAL_SERIES} series` : '✓ Marcar como completado'}
+          <Text style={[s.completarText, series < TOTAL_SERIES && s.completarTextDisabled]}>
+            {series < TOTAL_SERIES ? `Completa ${TOTAL_SERIES} series para finalizar` : '✓ Listo para la rutina'}
           </Text>
         </TouchableOpacity>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      </View>
     </View>
   );
 }
@@ -194,64 +262,52 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
 
-  videoContainer: { 
-    width: '100%', 
-    height: 280, 
-    backgroundColor: '#000', 
-    position: 'relative',
-    borderBottomLeftRadius: radius.lg,     // ← cambiado de xl a lg
-    borderBottomRightRadius: radius.lg,    // ← cambiado de xl a lg
-    overflow: 'hidden',
-  },
+  // Video
+  videoContainer: { width: '100%', height: 320, backgroundColor: '#000', position: 'relative', borderBottomLeftRadius: radius.xl, borderBottomRightRadius: radius.xl, overflow: 'hidden' },
   video: { width: '100%', height: '100%' },
-
+  playOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.4)' },
   videoPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface },
-  videoPlaceholderIcon: { fontSize: 48, color: colors.primary, marginBottom: 8 },
-  videoPlaceholderText: { color: colors.textSecondary, fontSize: 14 },
+  videoPlaceholderText: { color: colors.textSecondary, fontSize: 14, marginTop: 12 },
+  backBtn: { position: 'absolute', top: 50, right: spacing.lg, backgroundColor: 'rgba(0,0,0,0.5)', width: 40, height: 40, borderRadius: radius.full, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
 
-  backBtn: { 
-    position: 'absolute', 
-    top: 50, 
-    left: spacing.lg, 
-    backgroundColor: '#00000088', 
-    width: 38, 
-    height: 38, 
-    borderRadius: radius.full, 
-    justifyContent: 'center', 
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ffffff22',
-  },// Agrégalo debajo de tus estilos de video
-  playOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)', // Un ligero oscurecimiento para resaltar el botón
-  },
-
-  content: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
-  infoHeader: { flexDirection: 'row', gap: 8, marginBottom: spacing.sm },
+  // Content
+  content: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.xl },
+  infoHeader: { flexDirection: 'row', gap: 8, marginBottom: spacing.sm, alignItems: 'center' },
   musculoBadge: { backgroundColor: colors.primaryFaded, paddingHorizontal: 12, paddingVertical: 4, borderRadius: radius.full },
-  musculoText: { color: colors.primary, fontSize: 12, fontWeight: '700' },
-  premiumBadge: { backgroundColor: '#F59E0B', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },
-  premiumText: { fontSize: 11, fontWeight: 'bold', color: '#000' },
-  nombre: { fontSize: 26, fontWeight: 'bold', color: colors.textPrimary, marginBottom: spacing.md },
-  statsRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg, alignItems: 'center' },
-  stat: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: 20, fontWeight: 'bold', color: colors.primary },
-  statLabel: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  statDivider: { width: 1, height: 30, backgroundColor: colors.border },
-  section: { marginBottom: spacing.lg },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: spacing.sm },
-  descripcion: { fontSize: 14, color: colors.textSecondary, lineHeight: 22 },
-  seriesRow: { flexDirection: 'row', gap: spacing.sm },
-  serieBtn: { width: 52, height: 52, borderRadius: radius.full, borderWidth: 2, borderColor: colors.border, justifyContent: 'center', alignItems: 'center' },
+  musculoText: { color: colors.primary, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  premiumBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F59E0B', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },
+  premiumText: { fontSize: 11, fontWeight: '900', color: '#000' },
+  nombre: { ...typography.h1, fontSize: 32, marginBottom: spacing.md, lineHeight: 36 },
+
+  // 🚀 Botón Regresión
+  regresionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 77, 0, 0.1)', padding: spacing.md, borderRadius: radius.md, marginBottom: spacing.lg, borderWidth: 1, borderColor: 'rgba(255, 77, 0, 0.3)' },
+  regresionText: { color: colors.primary, fontWeight: '700', fontSize: 14, marginLeft: 8 },
+
+  // Historial Panel
+  historyPanel: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: radius.lg, padding: spacing.md, marginBottom: spacing.lg, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  historyTitle: { fontSize: 10, fontWeight: '900', color: colors.textSecondary, letterSpacing: 1.5, marginBottom: 12 },
+  historyMetrics: { flexDirection: 'row', alignItems: 'center' },
+  historyMetricBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  historyMetricValue: { fontSize: 16, fontWeight: '900', color: colors.textPrimary },
+  historyMetricLabel: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  historyDivider: { width: 1, height: 30, backgroundColor: 'rgba(255,255,255,0.1)', marginHorizontal: spacing.md },
+
+  // Sections
+  section: { marginBottom: spacing.xl },
+  sectionTitle: { ...typography.h3, fontSize: 18, marginBottom: 8 },
+  descripcion: { ...typography.body, color: colors.textSecondary, lineHeight: 24 },
+
+  // Series
+  seriesRow: { flexDirection: 'row', gap: spacing.md },
+  serieBtn: { width: 48, height: 48, borderRadius: radius.full, borderWidth: 2, borderColor: colors.border, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface },
   serieBtnDone: { backgroundColor: colors.primary, borderColor: colors.primary },
-  serieBtnText: { fontSize: 16, fontWeight: 'bold', color: colors.textSecondary },
-  serieBtnTextDone: { color: '#fff' },
-  completadoBanner: { marginTop: spacing.md, backgroundColor: colors.primaryFaded, borderRadius: radius.md, padding: spacing.sm, alignItems: 'center' },
-  completadoText: { color: colors.primary, fontWeight: 'bold', fontSize: 15 },
-  completarBtn: { backgroundColor: colors.primary, borderRadius: radius.full, padding: spacing.md, alignItems: 'center', marginTop: spacing.sm },
-  completarBtnDisabled: { backgroundColor: colors.surface },
-  completarText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
+  serieBtnText: { fontSize: 18, fontWeight: '900', color: colors.textSecondary },
+  serieBtnTextDone: { color: '#000' },
+
+  // Footer
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: spacing.lg, backgroundColor: colors.background, borderTopWidth: 1, borderTopColor: colors.border },
+  completarBtn: { backgroundColor: colors.primary, borderRadius: radius.full, height: 56, justifyContent: 'center', alignItems: 'center' },
+  completarBtnDisabled: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+  completarText: { color: '#000', fontWeight: '900', fontSize: 16 },
+  completarTextDisabled: { color: colors.textSecondary },
 });
