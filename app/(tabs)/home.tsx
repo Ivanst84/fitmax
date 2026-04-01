@@ -3,14 +3,33 @@ import { View, Text, StyleSheet, TouchableOpacity, StatusBar, ActivityIndicator,
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useRoutines } from '../../hooks/useRoutines';
+import { useAuth } from '../../hooks/useAuth'; // 🚀 Importamos el hook de Auth
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   
+  // 🔥 Hooks de datos
+  const { session } = useAuth();
   const { rutinaHoy, cargando, refetch } = useRoutines();
+
+  // 🚀 Lógica de Avatar Real
+  const getInitials = () => {
+    const fullName = session?.user?.user_metadata?.full_name || session?.user?.email || 'Usuario';
+    const names = fullName.split(' ');
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return names[0].substring(0, 2).toUpperCase();
+  };
+
+  const getUserFirstName = () => {
+    const fullName = session?.user?.user_metadata?.full_name || 'entrenador';
+    return fullName.split(' ')[0];
+  };
 
   const renderPlanDeHoy = () => {
     if (cargando) {
@@ -23,7 +42,6 @@ export default function HomeScreen() {
 
     if (!rutinaHoy) return null;
 
-    // ESTADO 1: DÍA DE DESCANSO
     if (rutinaHoy.isRest) {
       return (
         <View style={[styles.card, { opacity: 0.7, paddingVertical: spacing.xl, justifyContent: 'center' }]}>
@@ -34,7 +52,6 @@ export default function HomeScreen() {
       );
     }
 
-    // ESTADO 2: DÍA LIBRE (Sin rutinas en la DB)
     if (rutinaHoy.isEmpty) {
       return (
         <TouchableOpacity 
@@ -56,7 +73,6 @@ export default function HomeScreen() {
       );
     }
 
-    // ESTADO 3: RUTINA NORMAL (Sistema o Propia)
     return (
       <TouchableOpacity 
         activeOpacity={0.8}
@@ -84,16 +100,17 @@ export default function HomeScreen() {
     <View style={[styles.container, { paddingTop: Math.max(insets.top, spacing.xl) }]}>
       <StatusBar barStyle="light-content" />
       
+      {/* 🚀 Header Profile Dinámico */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Bienvenido de vuelta 👋</Text>
+          <Text style={styles.greeting}>Bienvenido de vuelta, {getUserFirstName()} 👋</Text>
           <Text style={styles.appName}>FitMax</Text>
         </View>
         <TouchableOpacity 
           style={styles.avatarContainer}
-          onPress={() => router.push('/(tabs)/profile')}
+          onPress={() => router.push('/profile')}
         >
-          <Text style={styles.avatarText}>JD</Text>
+          <Text style={styles.avatarText}>{getInitials()}</Text>
         </TouchableOpacity>
       </View>
 
@@ -123,7 +140,6 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* MUESTRA SOLO LA TARJETA QUE CORRESPONDE A HOY */}
         {renderPlanDeHoy()}
 
       </ScrollView>
@@ -134,7 +150,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.lg },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xl },
-  greeting: { ...typography.body, color: colors.textSecondary, marginBottom: 2 },
+  greeting: { ...typography.body, color: colors.textSecondary, marginBottom: 2, textTransform: 'capitalize' },
   appName: { ...typography.h1, color: colors.textPrimary },
   avatarContainer: { width: 45, height: 45, borderRadius: 23, backgroundColor: colors.primaryFaded, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255, 77, 0, 0.3)' },
   avatarText: { color: colors.primary, fontWeight: 'bold' },

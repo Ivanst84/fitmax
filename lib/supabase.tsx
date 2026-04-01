@@ -9,7 +9,7 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL as string;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY as string;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("🔥 FITMAX ERROR: Faltan las variables de entorno de Supabase.");
+  console.error(" FITMAX ERROR: Faltan las variables de entorno de Supabase.");
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
