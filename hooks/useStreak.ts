@@ -6,7 +6,10 @@ export function useStreak() {
   const { session } = useAuth();
   const [streak, setStreak] = useState(0);
   const [loading, setLoading] = useState(true);
-
+const diaJs = new Date().getDay(); 
+      const diaHoyISO = diaJs === 0 ? 7 : diaJs; // 1 = Lunes, 7 = Domingo
+      const nombresDias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+      const diaNombreHoy = nombresDias[diaHoyISO];
   useEffect(() => {
     if (session?.user?.id) {
       calculateStreak();
@@ -17,7 +20,7 @@ export function useStreak() {
     try {
       setLoading(true);
       
-      // 🚀 CORRECCIÓN: Usamos la columna 'fecha' en lugar de 'created_at'
+      // 🚀 Buscamos las fechas en el historial del usuario
       const { data, error } = await supabase
         .from('HISTORIAL_SESIONES')
         .select('fecha')
@@ -30,8 +33,7 @@ export function useStreak() {
         return;
       }
 
-      // 2. Normalizar fechas a formato YYYY-MM-DD y eliminar duplicados
-      // Usamos 'fecha' que es el nombre real en tu tabla
+      // Normalizar fechas a formato YYYY-MM-DD y eliminar duplicados
       const uniqueDates = Array.from(
         new Set(data.map(s => s.fecha.split('T')[0]))
       );
@@ -41,7 +43,7 @@ export function useStreak() {
         return;
       }
 
-      // 3. Lógica de conteo
+      // Lógica de conteo
       let currentStreak = 0;
       const today = new Date();
       const yesterday = new Date();
@@ -56,8 +58,7 @@ export function useStreak() {
         return;
       }
 
-      // 4. Empezamos a contar desde el día más reciente que entrenó
-      // Si entrenó hoy, empezamos desde hoy. Si no, desde ayer.
+      // Empezamos a contar desde el día más reciente que entrenó
       let checkDate = uniqueDates.includes(todayStr) ? today : yesterday;
       
       for (let i = 0; i < 365; i++) {
@@ -65,10 +66,9 @@ export function useStreak() {
         
         if (uniqueDates.includes(checkStr)) {
           currentStreak++;
-          // Restamos un día para la siguiente iteración
-          checkDate.setDate(checkDate.getDate() - 1);
+          checkDate.setDate(checkDate.getDate() - 1); // Restamos un día
         } else {
-          break; // Hueco encontrado
+          break; // Hueco encontrado, racha terminada
         }
       }
 

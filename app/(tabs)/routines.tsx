@@ -1,3 +1,4 @@
+import React from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, StatusBar, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,7 +7,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRoutines, RutinaSemana } from '../../hooks/useRoutines';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 
-const DIAS = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const DIAS_SHORT = ['', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
 
 export default function RoutinesScreen() {
@@ -20,9 +20,7 @@ export default function RoutinesScreen() {
     if (item.isRest) {
       return (
         <View style={s.restCard}>
-          <View style={s.dateCol}>
-            <Text style={s.dateText}>{DIAS_SHORT[item.dia_real_asignado]}</Text>
-          </View>
+          <View style={s.dateCol}><Text style={s.dateText}>{DIAS_SHORT[item.dia_real_asignado]}</Text></View>
           <View style={s.restInfo}>
             <Text style={s.restTitle}>Descanso</Text>
             <Text style={s.restSub}>Recuperación muscular</Text>
@@ -35,56 +33,35 @@ export default function RoutinesScreen() {
     // TARJETA DE DÍA LIBRE (Para agregar)
     if (item.isEmpty) {
       return (
-        <TouchableOpacity 
-          style={s.emptyCard} 
-          activeOpacity={0.7}
-          onPress={() => router.push('/create-routine')}
-        >
-          <View style={s.dateCol}>
-            <Text style={s.dateTextActive}>{DIAS_SHORT[item.dia_real_asignado]}</Text>
-          </View>
+        <TouchableOpacity style={s.emptyCard} activeOpacity={0.7} onPress={() => router.push('/create-routine')}>
+          <View style={s.dateCol}><Text style={s.dateTextActive}>{DIAS_SHORT[item.dia_real_asignado]}</Text></View>
           <View style={s.emptyInfo}>
             <Text style={s.emptyTitle}>Día Libre</Text>
             <Text style={s.emptySub}>Toca para crear rutina</Text>
           </View>
-          <View style={s.addBtn}>
-            <Ionicons name="add" size={20} color={colors.primary} />
-          </View>
+          <View style={s.addBtn}><Ionicons name="add" size={20} color={colors.primary} /></View>
         </TouchableOpacity>
       );
     }
 
-    // TARJETA DE RUTINA NORMAL (Sistema o Personalizada)
+    // TARJETA DE RUTINA NORMAL
     return (
-      <TouchableOpacity 
-        style={s.activeCard} 
-        activeOpacity={0.8}
-        onPress={() => router.push(`/rutina/${item.id}`)}
-      >
+      <TouchableOpacity style={s.activeCard} activeOpacity={0.8} onPress={() => router.push(`/rutina/${item.id}`)}>
         <View style={s.dateCol}>
           <View style={s.activeDot} />
           <Text style={s.dateTextActive}>{DIAS_SHORT[item.dia_real_asignado]}</Text>
         </View>
-
         <View style={s.activeInfo}>
           <View style={s.rowBadge}>
             <Text style={s.routineName} numberOfLines={1}>{item.nombre}</Text>
-            {item.isCustom && (
-              <View style={s.customBadge}>
-                <Text style={s.customBadgeText}>PROPIA</Text>
-              </View>
-            )}
+            {item.isCustom && <View style={s.customBadge}><Text style={s.customBadgeText}>PROPIA</Text></View>}
           </View>
-          
           <View style={s.metaRow}>
             <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
             <Text style={s.metaText}>{item.duracion_min || 45} min</Text>
           </View>
         </View>
-
-        <View style={s.playBtn}>
-          <Ionicons name="chevron-forward" size={20} color={colors.background} />
-        </View>
+        <View style={s.playBtn}><Ionicons name="chevron-forward" size={20} color="#000" /></View>
       </TouchableOpacity>
     );
   };
@@ -104,9 +81,7 @@ export default function RoutinesScreen() {
       </View>
 
       {cargando ? (
-        <View style={s.center}>
-          <ActivityIndicator color={colors.primary} size="large" />
-        </View>
+        <View style={s.center}><ActivityIndicator color={colors.primary} size="large" /></View>
       ) : (
         <FlatList
           data={rutinas}
@@ -125,40 +100,35 @@ const s = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, marginBottom: spacing.xl },
-  title: { ...typography.h1, color: colors.textPrimary },
-  subtitle: { ...typography.body, color: colors.textSecondary },
+  title: { ...typography.h1 },
+  subtitle: { ...typography.body },
   refreshBtn: { padding: 8, backgroundColor: colors.surface, borderRadius: radius.full },
   
   list: { paddingHorizontal: spacing.lg, paddingBottom: 100 },
   
-  // Columna de Fecha compartida
   dateCol: { width: 50, alignItems: 'center', justifyContent: 'center', borderRightWidth: 1, borderRightColor: colors.border, marginRight: spacing.md, paddingRight: spacing.sm },
-  dateText: { fontSize: 13, fontWeight: 'bold', color: colors.textMuted },
-  dateTextActive: { fontSize: 13, fontWeight: '900', color: colors.primary },
+  dateText: { ...typography.small, fontWeight: '700' },
+  dateTextActive: { ...typography.small, fontWeight: '900', color: colors.primary },
   activeDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary, marginBottom: 4 },
 
-  // Tarjeta Descanso
-  restCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'transparent', paddingVertical: spacing.md, paddingHorizontal: spacing.sm, marginBottom: spacing.sm, opacity: 0.6 },
+  restCard: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.sm, marginBottom: spacing.md, opacity: 0.6 },
   restInfo: { flex: 1 },
-  restTitle: { fontSize: 16, fontWeight: '600', color: colors.textMuted },
-  restSub: { fontSize: 12, color: colors.textMuted },
+  restTitle: { ...typography.label, color: colors.textMuted, marginBottom: 2 },
+  restSub: { ...typography.small, color: colors.textMuted },
 
-  // Tarjeta Vacía (Agregar)
-  emptyCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceLight, paddingVertical: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.md, marginBottom: spacing.sm, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border },
+  emptyCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceLight, paddingVertical: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.lg, marginBottom: spacing.md, borderWidth: 1, borderStyle: 'dashed', borderColor: colors.border },
   emptyInfo: { flex: 1 },
-  emptyTitle: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 2 },
-  emptySub: { fontSize: 12, color: colors.textSecondary },
+  emptyTitle: { ...typography.label, marginBottom: 4 },
+  emptySub: { ...typography.small },
   addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryFaded, justifyContent: 'center', alignItems: 'center' },
 
-  // Tarjeta Activa (Rutina)
-  activeCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, paddingVertical: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.lg, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  activeCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, paddingVertical: spacing.md, paddingHorizontal: spacing.sm, borderRadius: radius.lg, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
   activeInfo: { flex: 1 },
-  rowBadge: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  routineName: { fontSize: 17, fontWeight: 'bold', color: colors.textPrimary, flexShrink: 1, marginRight: 8 },
-  customBadge: { backgroundColor: colors.primaryFaded, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  customBadgeText: { color: colors.primary, fontSize: 9, fontWeight: '900' },
+  rowBadge: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  routineName: { ...typography.label, flexShrink: 1, marginRight: 8 },
+  customBadge: { backgroundColor: colors.primaryFaded, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.sm },
+  customBadgeText: { ...typography.caption, color: colors.primary },
   metaRow: { flexDirection: 'row', alignItems: 'center' },
-  metaText: { fontSize: 13, color: colors.textSecondary, marginLeft: 4, fontWeight: '500' },
-  
-  playBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.textPrimary, justifyContent: 'center', alignItems: 'center' },
+  metaText: { ...typography.small, marginLeft: 4 },
+  playBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
 });

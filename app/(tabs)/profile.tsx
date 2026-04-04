@@ -1,22 +1,24 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator,Alert } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useState } from 'react';
+
 import { runExerciseSync } from '../../lib/syncExerciseDB';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
-import { useStreak } from '../../hooks/useStreak'; // 🚀 Nuevo Hook
+import { useStreak } from '../../hooks/useStreak';
+import { supabase } from '../../lib/supabase';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
-  const { streak, loading: loadingStreak } = useStreak(); // 🚀 Racha Real
-const [isSyncing, setIsSyncing] = useState(false);
+  const { streak, loading: loadingStreak } = useStreak();
+  
+  const [isSyncing, setIsSyncing] = useState(false);
+  
   const fullName = session?.user?.user_metadata?.full_name || 'Atleta FitMax';
-  const firstName = fullName.split(' ')[0];
   const initials = fullName
     .split(' ')
     .map((n: string) => n[0])
@@ -24,74 +26,99 @@ const [isSyncing, setIsSyncing] = useState(false);
     .substring(0, 2)
     .toUpperCase();
 
-  const handleLogout = async () => {
-    router.replace('/(auth)/login');
+  const handleLogout = async () => { router.replace('/(auth)/login'); };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "⚠️ ¿Borrar cuenta?",
+      "Esto borrará todo tu perfil, rutinas y datos de la base de datos para siempre.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Sí, Borrar Todo", 
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const { error } = await supabase.rpc('delete_user_account');
+              if (error) throw error;
+              await supabase.auth.signOut();
+              router.replace('/'); 
+            } catch (error: any) {
+              Alert.alert("Error", error.message);
+            }
+          }
+        }
+      ]
+    );
   };
+
   const handleSync = async () => {
-  setIsSyncing(true);
-  const success = await runExerciseSync();
-  setIsSyncing(false);
-  
-  if (success) {
-    Alert.alert("¡Éxito!", "10 Ejercicios nuevos añadidos a FitMax.");
-  } else {
-    Alert.alert("Error", "Revisa la consola para más detalles.");
-  }
-};
+    setIsSyncing(true);
+    const success = await runExerciseSync();
+    setIsSyncing(false);
+    if (success) Alert.alert("¡Éxito!", "Ejercicios añadidos.");
+  };
 
   return (
     <View style={s.container}>
       <StatusBar barStyle="light-content" />
       
-      <ScrollView 
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: 100 }}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingTop: insets.top + spacing.xl, paddingBottom: 100 }}>
+        
         {/* HEADER PERFIL */}
         <View style={s.header}>
-          <View style={s.avatarContainer}>
-            <Text style={s.avatarText}>{initials}</Text>
-          </View>
+          <View style={s.avatarContainer}><Text style={s.avatarText}>{initials}</Text></View>
           <Text style={s.userName}>{fullName}</Text>
           <Text style={s.userEmail}>{session?.user?.email}</Text>
           
-          <TouchableOpacity 
-            style={s.editBtn} 
-            onPress={() => router.push('/edit-profile')}
-          >
+          <TouchableOpacity style={s.editBtn} onPress={() => router.push('/edit-profile')}>
             <Text style={s.editBtnText}>Editar Perfil</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity 
-  onPress={handleSync} 
-  disabled={isSyncing}
-  style={{ 
-    backgroundColor: '#FF4D00', padding: 15, borderRadius: 10, 
-    margin: 20, alignItems: 'center' 
-  }}
->
-  {isSyncing ? (
-    <ActivityIndicator color="#000" />
-  ) : (
-    <Text style={{ color: '#000', fontWeight: 'bold' }}>
-      ⚠️ ADMIN: Cargar Ejercicios
-    </Text>
-  )}
-</TouchableOpacity>
+          <TouchableOpacity onPress={handleSync} disabled={isSyncing} style={s.adminBtn}>
+            {isSyncing ? <ActivityIndicator color="#000" /> : <Text style={s.adminBtnText}>⚠️ ADMIN: Cargar Ejercicios</Text>}
+          </TouchableOpacity>
+        </View>
+
+        {/* 🚀 NUEVA SECCIÓN: MIS LOGROS (Navegación a History y Stats) */}
+        <View style={s.logrosContainer}>
+          <Text style={s.menuTitle}>MI RENDIMIENTO</Text>
+          <View style={s.logrosGrid}>
+            <TouchableOpacity 
+              style={s.logroCard} 
+              activeOpacity={0.8}
+              onPress={() => router.push('/(tabs)/stats')}
+            >
+              <View style={[s.iconBox, { backgroundColor: 'rgba(255, 77, 0, 0.15)' }]}>
+                <Ionicons name="bar-chart" size={28} color={colors.primary} />
+              </View>
+              <Text style={s.logroTitle}>Estadísticas</Text>
+              <Text style={s.logroSub}>Volumen y Análisis</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={s.logroCard} 
+              activeOpacity={0.8}
+              onPress={() => router.push('/(tabs)/history')}
+            >
+              <View style={[s.iconBox, { backgroundColor: 'rgba(255, 215, 0, 0.15)' }]}>
+                <Ionicons name="trophy" size={28} color="#FFD700" />
+              </View>
+              <Text style={s.logroTitle}>Historial</Text>
+              <Text style={s.logroSub}>Sesiones pasadas</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* STATS ROW (Racha Real) */}
         <View style={s.statsRow}>
           <View style={s.statCard}>
             <Ionicons name="flame" size={24} color={streak > 0 ? colors.primary : colors.textMuted} />
-            <Text style={[s.statValue, streak > 0 && { color: colors.primary }]}>
-              {loadingStreak ? '...' : streak}
-            </Text>
+            <Text style={[s.statValue, streak > 0 && { color: colors.primary }]}>{loadingStreak ? '...' : streak}</Text>
             <Text style={s.statLabel}>DÍAS SEGUIDOS</Text>
           </View>
-
           <View style={s.statCard}>
-            <Ionicons name="trophy" size={24} color="#FFD700" />
+            <Ionicons name="star" size={24} color="#C0C0C0" />
             <Text style={s.statValue}>Nvl 1</Text>
             <Text style={s.statLabel}>RANGO</Text>
           </View>
@@ -101,28 +128,27 @@ const [isSyncing, setIsSyncing] = useState(false);
         <View style={s.menuSection}>
           <Text style={s.menuTitle}>CONFIGURACIÓN</Text>
           
-          <MenuOption 
-            icon="notifications-outline" 
-            label="Recordatorios de entreno" 
-            onPress={() => {}} 
-          />
+          <MenuOption icon="notifications-outline" label="Recordatorios de entreno" onPress={() => {}} />
+          
+          {/* 🛡️ OPCIONES DESHABILITADAS POR AHORA (UX Pro) */}
           <MenuOption 
             icon="shield-checkmark-outline" 
             label="Suscripción Premium" 
-            onPress={() => {}} 
-            rightElement={<View style={s.proBadge}><Text style={s.proText}>PRO</Text></View>}
+            disabled={true} 
+            rightElement={<Text style={s.comingSoonText}>Próximamente</Text>}
           />
           <MenuOption 
-            icon="help-circle-outline" 
+            icon="headset-outline" 
             label="Soporte técnico" 
-            onPress={() => {}} 
+            disabled={true} 
+            rightElement={<Text style={s.comingSoonText}>Próximamente</Text>}
           />
-          <MenuOption 
-            icon="log-out-outline" 
-            label="Cerrar Sesión" 
-            onPress={handleLogout}
-            danger
-          />
+          
+          <View style={s.dangerZone}>
+            <Text style={s.dangerTitle}>ZONA DE PELIGRO</Text>
+            <MenuOption icon="log-out-outline" label="Cerrar Sesión" onPress={handleLogout} danger />
+            <MenuOption icon="trash-outline" label="Borrar Cuenta (Prueba)" onPress={handleDeleteAccount} danger />
+          </View>
         </View>
 
       </ScrollView>
@@ -130,38 +156,42 @@ const [isSyncing, setIsSyncing] = useState(false);
   );
 }
 
-// Componente Interno para Opciones
-function MenuOption({ icon, label, onPress, danger, rightElement }: any) {
+// Componente Interno Modificado para soportar 'disabled'
+function MenuOption({ icon, label, onPress, danger, rightElement, disabled }: any) {
   return (
-    <TouchableOpacity style={s.option} onPress={onPress} activeOpacity={0.7}>
+    <TouchableOpacity 
+      style={[s.option, disabled && { opacity: 0.5 }]} 
+      onPress={disabled ? undefined : onPress} 
+      activeOpacity={disabled ? 1 : 0.7}
+    >
       <View style={s.optionLeft}>
         <Ionicons name={icon} size={22} color={danger ? colors.error : colors.textPrimary} />
         <Text style={[s.optionLabel, danger && { color: colors.error }]}>{label}</Text>
       </View>
-      {rightElement || <Ionicons name="chevron-forward" size={20} color={colors.border} />}
+      {rightElement || (!disabled && <Ionicons name="chevron-forward" size={20} color={colors.border} />)}
     </TouchableOpacity>
   );
 }
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { alignItems: 'center', marginBottom: spacing.xl },
-  avatarContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: colors.primaryFaded,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.primary,
-    marginBottom: spacing.md
-  },
+  header: { alignItems: 'center', marginBottom: spacing.md },
+  avatarContainer: { width: 100, height: 100, borderRadius: 50, backgroundColor: colors.primaryFaded, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: colors.primary, marginBottom: spacing.md },
   avatarText: { fontSize: 32, fontWeight: 'bold', color: colors.primary },
   userName: { ...typography.h2, color: colors.textPrimary, marginBottom: 4 },
   userEmail: { ...typography.body, color: colors.textMuted },
   editBtn: { marginTop: spacing.md, paddingHorizontal: 20, paddingVertical: 8, borderRadius: radius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   editBtnText: { color: colors.textPrimary, fontSize: 13, fontWeight: '600' },
+  adminBtn: { backgroundColor: '#FF4D00', padding: 15, borderRadius: 10, marginTop: 20, alignItems: 'center' },
+  adminBtnText: { color: '#000', fontWeight: 'bold' },
+
+  // 🔥 NUEVOS ESTILOS PARA LOS BOTONES DE HISTORIAL Y STATS
+  logrosContainer: { paddingHorizontal: spacing.lg, marginBottom: spacing.xl },
+  logrosGrid: { flexDirection: 'row', gap: spacing.md },
+  logroCard: { flex: 1, backgroundColor: colors.surface, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
+  iconBox: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.sm },
+  logroTitle: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 2 },
+  logroSub: { fontSize: 11, color: colors.textSecondary },
 
   statsRow: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, marginBottom: spacing.xl },
   statCard: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
@@ -169,11 +199,12 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 10, fontWeight: '900', color: colors.textMuted, letterSpacing: 1 },
 
   menuSection: { paddingHorizontal: spacing.lg },
-  menuTitle: { fontSize: 11, fontWeight: '900', color: colors.textMuted, letterSpacing: 1.5, marginBottom: spacing.md },
+  menuTitle: { fontSize: 11, fontWeight: '900', color: colors.textMuted, letterSpacing: 1.5, marginBottom: spacing.sm },
   option: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
   optionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   optionLabel: { fontSize: 16, color: colors.textPrimary, fontWeight: '500' },
+  comingSoonText: { fontSize: 10, color: colors.textSecondary, fontStyle: 'italic', backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
   
-  proBadge: { backgroundColor: '#F59E0B', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  proText: { fontSize: 10, fontWeight: '900', color: '#000' }
+  dangerZone: { marginTop: 30, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 },
+  dangerTitle: { fontSize: 11, fontWeight: '900', color: colors.error, letterSpacing: 1.5, marginBottom: spacing.sm },
 });

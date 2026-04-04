@@ -1,171 +1,153 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { useState, useEffect, useCallback } from 'react';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../lib/supabase';
-
-export interface SetData {
-  reps: string;
-  kg: string;
-  completed: boolean;
-}
 
 export function useWorkoutSession(ejerciciosIniciales: any[]) {
   const [activeExercises, setActiveExercises] = useState<any[]>([]);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
-  const [setsData, setSetsData] = useState<Record<string, SetData[]>>({});
-  const [restSeconds, setRestSeconds] = useState(0);
+  const [setsData, setSetsData] = useState<Record<string, any[]>>({});
+  const [previousSets, setPreviousSets] = useState<Record<string, any[]>>({});
   const [isResting, setIsResting] = useState(false);
+  const [restSeconds, setRestSeconds] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
-  const [isSwapping, setIsSwapping] = useState(false);
 
-  const restEndTimeRef = useRef<number | null>(null);
+  // 👻 BUSCAR HISTORIAL ANTERIOR
+  const fetchPreviousStats = async (ejercicios: any[]) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || ejercicios.length === 0) return;
 
-  useEffect(() => {
-    if (ejerciciosIniciales?.length > 0 && activeExercises.length === 0) {
-      setActiveExercises(ejerciciosIniciales);
-      const initialSets: Record<string, SetData[]> = {};
-      ejerciciosIniciales.forEach(ex => {
-        initialSets[ex.id] = Array.from({ length: ex.series || 3 }).map(() => ({
-          reps: ex.repeticiones?.toString() || '12',
-          kg: '',
-          completed: false
-        }));
+    const ids = ejercicios.map(e => e.ejercicio_id);
+    const { data } = await supabase
+      .from('HISTORIAL_EJERCICIOS')
+      .select('ejercicio_id, series_json, created_at')
+      .eq('user_id', user.id)
+      .in('ejercicio_id', ids)
+      .order('created_at', { ascending: false });
+
+    if (data) {
+      const map: any = {};
+      data.forEach(row => {
+        if (!map[row.ejercicio_id]) map[row.ejercicio_id] = row.series_json;
       });
-      setSetsData(initialSets);
-    }
-  }, [ejerciciosIniciales]);
-
-  const totalExercises = activeExercises.length;
-  const currentExercise = activeExercises[currentExerciseIndex];
-
-  // Lógica de Descanso (Background Safe)
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
-      if (nextAppState === 'active' && isResting && restEndTimeRef.current) {
-        const remaining = Math.round((restEndTimeRef.current - Date.now()) / 1000);
-        if (remaining <= 0) {
-          setRestSeconds(0);
-          setIsResting(false);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } else {
-          setRestSeconds(remaining);
-        }
-      }
-    });
-    return () => subscription.remove();
-  }, [isResting]);
-
-  useEffect(() => {
-    if (!isResting || restSeconds <= 0) return;
-    const interval = setInterval(() => {
-      const remaining = Math.round((restEndTimeRef.current! - Date.now()) / 1000);
-      if (remaining <= 0) {
-        setRestSeconds(0);
-        setIsResting(false);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        clearInterval(interval);
-      } else {
-        setRestSeconds(remaining);
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [isResting, restSeconds]);
-
-  const updateSetData = useCallback((exerciseId: string, setIndex: number, field: 'reps' | 'kg', value: string) => {
-    setSetsData(prev => {
-      const exSets = [...(prev[exerciseId] || [])];
-      exSets[setIndex] = { ...exSets[setIndex], [field]: value };
-      return { ...prev, [exerciseId]: exSets };
-    });
-  }, []);
-
-  const toggleSetComplete = useCallback((exerciseId: string, setIndex: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSetsData(prev => {
-      const exSets = [...(prev[exerciseId] || [])];
-      const isNowCompleted = !exSets[setIndex].completed;
-      exSets[setIndex] = { ...exSets[setIndex], completed: isNowCompleted };
-      
-      if (isNowCompleted && !exSets.every(s => s.completed)) {
-        const descanso = currentExercise?.descanso_seg || 60;
-        restEndTimeRef.current = Date.now() + (descanso * 1000);
-        setRestSeconds(descanso);
-        setIsResting(true);
-      }
-      return { ...prev, [exerciseId]: exSets };
-    });
-  }, [currentExercise]);
-
-  const swapExercise = async (relationId: string, newExerciseId: string) => {
-    try {
-      setIsSwapping(true);
-      const { data: newEj } = await supabase.from('EJERCICIOS').select('*').eq('id', newExerciseId).single();
-      if (newEj) {
-        setActiveExercises(prev => prev.map(item => item.id === relationId ? { ...item, ejercicio_id: newExerciseId, ejercicio: newEj } : item));
-      }
-    } finally {
-      setIsSwapping(false);
+      setPreviousSets(map);
     }
   };
 
-  const finishAndSaveWorkout = async (
-    rutinaId: string, 
-    nombreRutina: string, 
-    totalSeconds: number, 
-    volumenFinal: number, 
-    setsFinales: number
-  ) => {
+  useEffect(() => {
+    if (ejerciciosIniciales?.length > 0) {
+      setActiveExercises(ejerciciosIniciales);
+      const initialSets: any = {};
+      ejerciciosIniciales.forEach(ex => {
+        initialSets[ex.id] = Array.from({ length: ex.series }).map(() => ({
+          reps: ex.repeticiones, kg: '', completed: false
+        }));
+      });
+      setSetsData(initialSets);
+      fetchPreviousStats(ejerciciosIniciales);
+    }
+  }, [ejerciciosIniciales]);
+
+  // 🔄 FUNCIÓN PARA INTERCAMBIAR EJERCICIO (Regresión)
+  const swapExercise = async (relationId: string, newExerciseId: string) => {
+    try {
+      const { data: newEj } = await supabase
+        .from('EJERCICIOS')
+        .select('*')
+        .eq('id', newExerciseId)
+        .single();
+
+      if (newEj) {
+        setActiveExercises(prev => prev.map(item => 
+          item.id === relationId ? { ...item, ejercicio_id: newExerciseId, ejercicio: newEj } : item
+        ));
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (e) {
+      console.error("Error al cambiar ejercicio:", e);
+    }
+  };
+
+  const toggleSetComplete = (exerciseId: string, setIndex: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const newSets = [...setsData[exerciseId]];
+    newSets[setIndex].completed = !newSets[setIndex].completed;
+    
+    if (newSets[setIndex].completed) {
+      const seg = activeExercises[currentExerciseIndex]?.descanso_segundos || 60;
+      setRestSeconds(seg);
+      setIsResting(true);
+    }
+    setSetsData({ ...setsData, [exerciseId]: newSets });
+  };
+
+  const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: number, vol: number, sets: number, kcal: number) => {
     try {
       setIsSaving(true);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return false;
 
-      // Mapeo de historial para inserción masiva
-      const historialEjercicios = activeExercises.map(ex => ({
+      // 1. Guarda la sesión general
+      const { data: sesion, error: sErr } = await supabase.from('HISTORIAL_SESIONES').insert({
+        user_id: user.id, rutina_id: rutinaId, nombre_rutina: nombre,
+        duracion_segundos: segundos, volumen_total_kg: vol,
+        sets_completados: sets, calorias_quemadas: kcal
+      }).select().single();
+
+      if (sErr) throw sErr;
+
+      // 2. Prepara el detalle de ejercicios con SALVAVIDAS 🛡️
+      const logs = activeExercises.map(ex => ({
+        sesion_id: sesion.id,
+        user_id: user.id,
         ejercicio_id: ex.ejercicio_id,
-        nombre_ejercicio: ex.ejercicio.nombre,
-        series_json: (setsData[ex.id] || []).map(s => ({
-          reps: parseInt(s.reps) || 0,
-          kg: parseFloat(s.kg) || 0,
-          completed: s.completed
-        }))
+        nombre_ejercicio: ex.ejercicio?.nombre || 'Ejercicio sin nombre', // Evita nulos
+        series_json: setsData[ex.id] || [] // Evita nulos
       }));
 
-      const { data: sesion, error: sesionErr } = await supabase
-        .from('HISTORIAL_SESIONES')
-        .insert({
-          user_id: user.id,
-          rutina_id: rutinaId,
-          nombre_rutina: nombreRutina,
-          duracion_segundos: totalSeconds,
-          volumen_total_kg: volumenFinal,
-          sets_completados: setsFinales,
-        })
-        .select().single();
-
-      if (sesionErr) throw sesionErr;
-
-      await supabase.from('HISTORIAL_EJERCICIOS').insert(
-        historialEjercicios.map(d => ({ ...d, sesion_id: sesion.id, user_id: user.id }))
-      );
+      // 3. Inserta y captura el error exacto 🚨
+      const { error: logErr } = await supabase.from('HISTORIAL_EJERCICIOS').insert(logs);
+      
+      if (logErr) {
+        console.error("❌ ERROR SUPABASE AL GUARDAR HISTORIAL_EJERCICIOS:", logErr.message, logErr.details);
+        throw logErr; // Lanzamos el error para que la UI sepa que falló
+      } else {
+        console.log(`✅ ¡ÉXITO! ${logs.length} ejercicios guardados en el historial.`);
+      }
 
       return true;
     } catch (e) {
-      console.error("Save Error:", e);
+      console.error("❌ Fallo general al guardar:", e);
       return false;
-    } finally {
-      setIsSaving(false);
+    } finally { 
+      setIsSaving(false); 
     }
   };
 
   return {
-    currentExercise, currentExerciseIndex, setsData, updateSetData, toggleSetComplete,
+    currentExercise: activeExercises[currentExerciseIndex],
+    currentExerciseIndex,
+    setsData,
+    previousSets,
+    toggleSetComplete,
+    isResting,
+    restSeconds,
     skipRest: () => { setIsResting(false); setRestSeconds(0); },
-    allSetsDone: currentExercise ? (setsData[currentExercise.id] || []).every(s => s.completed) : false,
-    totalExercises, restSeconds, isResting,
     goToNextExercise: () => setCurrentExerciseIndex(prev => prev + 1),
     goToPrevExercise: () => setCurrentExerciseIndex(prev => prev - 1),
-    finishAndSaveWorkout, isSaving, isSwapping, swapExercise,
-    ejerciciosActivos: activeExercises
+    finishAndSaveWorkout,
+    isSaving,
+    totalExercises: activeExercises.length,
+    ejerciciosActivos: activeExercises,
+    updateSetData: (id: string, idx: number, field: string, val: string) => {
+      const s = [...(setsData[id] || [])];
+      if (s[idx]) {
+        s[idx] = { ...s[idx], [field]: val };
+        setSetsData({...setsData, [id]: s});
+      }
+    },
+    allSetsDone: activeExercises[currentExerciseIndex] 
+      ? (setsData[activeExercises[currentExerciseIndex].id] || []).every(s => s.completed) 
+      : false,
+    swapExercise
   };
 }

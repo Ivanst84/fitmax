@@ -1,246 +1,263 @@
-// Ruta: app/onboarding/index.tsx
-import {
-  View, Text, TouchableOpacity, StyleSheet,
-  StatusBar, ScrollView, Dimensions, TextInput
+import React, { useState, useEffect } from 'react';
+import { 
+  View, Text, StyleSheet, TouchableOpacity, 
+  ScrollView, ActivityIndicator, StatusBar, Alert, TextInput, KeyboardAvoidingView, Platform
 } from 'react-native';
-import { useState } from 'react';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import { supabase } from '../../lib/supabase';
-import { colors, spacing, radius } from '../../constants/theme';
+import { colors, spacing, radius, typography } from '../../constants/theme';
+import { useGeminiRoutine } from '../../hooks/useGeminiRoutine';
 
-const { width } = Dimensions.get('window');
-
-// Catálogos
-const OBJETIVOS = [
-  { id: 1, icon: 'trending-down', label: 'Perder peso', desc: 'Quemar grasa y definir' },
-  { id: 2, icon: 'barbell',       label: 'Ganar músculo', desc: 'Aumentar masa muscular' },
-  { id: 3, icon: 'body',          label: 'Tonificar',    desc: 'Definir y fortalecer' },
+const PASOS = [
+  { id: 'genero', titulo: '¿Cuál es tu género?', subtitulo: 'Calculamos tu metabolismo basal.', opciones: [{ id: 'hombre', label: 'Hombre', desc: 'Prioridad estándar', icon: 'man-outline' }, { id: 'mujer', label: 'Mujer', desc: 'Mayor recuperación', icon: 'woman-outline' }, { id: 'otro', label: 'Otro', desc: 'Plan balanceado', icon: 'person-outline' }] },
+  { id: 'edad', titulo: '¿Qué edad tienes?', subtitulo: 'Ajustamos carga articular.', opciones: [{ id: '18_25', label: '18-25 años', desc: 'Recuperación Full', icon: 'battery-full-outline' }, { id: '26_35', label: '26-35 años', desc: 'Pico de fuerza', icon: 'battery-half-outline' }, { id: '36_45', label: '36-45 años', desc: 'Fuerza y movilidad', icon: 'shield-checkmark-outline' }, { id: '46_mas', label: '46+ años', desc: 'Longevidad', icon: 'heart-outline' }] },
+  { id: 'peso', titulo: '¿Cuánto pesas?', subtitulo: 'Vital para calcular calorías e IMC.', custom: true },
+  { id: 'estatura', titulo: '¿Cuánto mides?', subtitulo: 'Para tus palancas musculares.', custom: true },
+  { id: 'nivel', titulo: '¿Cuál es tu nivel?', subtitulo: 'Técnica y volumen de carga.', opciones: [{ id: 'principiante', label: 'Principiante', desc: '< 6 meses', icon: 'leaf-outline' }, { id: 'intermedio', label: 'Intermedio', desc: '1-2 años', icon: 'barbell-outline' }, { id: 'avanzado', label: 'Avanzado', desc: '> 2 años', icon: 'skull-outline' }] },
+  { id: 'objetivo', titulo: '¿Tu meta principal?', subtitulo: 'Define rangos de reps y series.', opciones: [{ id: 'perder_peso', label: 'Perder Grasa', desc: 'Déficit y cardio', icon: 'flame-outline' }, { id: 'hipertrofia', label: 'Ganar Músculo', desc: '8-12 reps', icon: 'trending-up-outline' }, { id: 'fuerza', label: 'Fuerza Pura', desc: '1-5 reps', icon: 'fitness-outline' }] },
+  { id: 'enfoque', titulo: '¿Qué zona priorizar?', subtitulo: 'Volumen extra en esta área.', opciones: [{ id: 'fullbody', label: 'Cuerpo Completo', desc: 'Armónico', icon: 'body-outline' }, { id: 'superior', label: 'Tren Superior', desc: 'Torso y brazos', icon: 'shirt-outline' }, { id: 'inferior', label: 'Tren Inferior', desc: 'Pierna y glúteo', icon: 'walk-outline' }] },
+  { id: 'frecuencia', titulo: '¿Días a entrenar?', subtitulo: 'Construiremos tu Split semanal.', opciones: [{ id: 2, label: '2 días', desc: 'Fullbody', icon: 'calendar-clear-outline' }, { id: 3, label: '3 días', desc: 'Equilibrado', icon: 'calendar-outline' }, { id: 4, label: '4 días', desc: 'Upper/Lower', icon: 'calendar-number-outline' }, { id: 5, label: '5 días', desc: 'PPL / Bro Split', icon: 'flash-outline' }] },
+  { id: 'duracion', titulo: '¿Tiempo por sesión?', subtitulo: 'Número de ejercicios.', opciones: [{ id: 30, label: '30 Minutos', desc: 'Sin descansos', icon: 'timer-outline' }, { id: 45, label: '45 Minutos', desc: 'Recomendado', icon: 'hourglass-outline' }, { id: 60, label: '60+ Minutos', desc: 'Completo', icon: 'stopwatch-outline' }] },
+  { id: 'equipo', titulo: '¿Dónde entrenarás?', subtitulo: 'Solo ejercicios disponibles.', opciones: [{ id: 'casa', label: 'En Casa', desc: 'Peso corporal', icon: 'home-outline' }, { id: 'mancuernas', label: 'Mancuernas', desc: 'Gym básico', icon: 'disc-outline' }, { id: 'gym', label: 'Gym Completo', desc: 'Máquinas y racks', icon: 'business-outline' }] }
 ];
-
-const NIVELES = [
-  { id: 1, icon: 'star-outline',  label: 'Principiante', desc: 'Menos de 6 meses' },
-  { id: 2, icon: 'star-half',     label: 'Intermedio',   desc: '6 meses a 2 años' },
-];
-
-const DIAS_SEMANA = [
-  { id: 1, label: 'Lunes', short: 'Lun' }, { id: 2, label: 'Martes', short: 'Mar' },
-  { id: 3, label: 'Miércoles', short: 'Mié' }, { id: 4, label: 'Jueves', short: 'Jue' },
-  { id: 5, label: 'Viernes', short: 'Vie' }, { id: 6, label: 'Sábado', short: 'Sáb' },
-  { id: 7, label: 'Domingo', short: 'Dom' },
-];
-
-const LUGARES = [
-  { id: 1, icon: 'home', label: 'En Casa', desc: 'Sin equipo o equipo básico' },
-  { id: 2, icon: 'fitness', label: 'Gimnasio', desc: 'Máquinas y pesas libres' },
-];
-
-const GENEROS = [
-  { id: 1, icon: 'female', label: 'Mujer' },
-  { id: 2, icon: 'male',   label: 'Hombre' },
-];
-
-const TOTAL_PASOS = 6;
 
 export default function OnboardingScreen() {
   const router = useRouter();
-  const [paso, setPaso] = useState(1);
+  const insets = useSafeAreaInsets();
+  const { generateRoutine } = useGeminiRoutine();
   
-  // Estados
-  const [objetivo, setObjetivo] = useState<number | null>(null);
-  const [nivel, setNivel]       = useState<number | null>(null);
-  const [diasSeleccionados, setDiasSeleccionados] = useState<number[]>([]);
-  const [lugar, setLugar]       = useState<number | null>(null);
-  const [edad, setEdad]         = useState<string>('');
-  const [genero, setGenero]     = useState<number | null>(null);
-  
-  const [guardando, setGuardando] = useState(false);
+  const [pasoActual, setPasoActual] = useState(0);
+  const [respuestas, setRespuestas] = useState<Record<string, any>>({});
+  const [generando, setGenerando] = useState(false);
+  const [mensajeCarga, setMensajeCarga] = useState(0);
 
-  const toggleDia = (id: number) => {
-    setDiasSeleccionados(prev => 
-      prev.includes(id) ? prev.filter(dia => dia !== id) : [...prev, id].sort((a, b) => a - b)
-    );
-  };
+  const [pesoInput, setPesoInput] = useState('75');
+  const [estaturaInputCM, setEstaturaInputCM] = useState('170');
 
-  const puedeAvanzar = () => {
-    if (paso === 1) return objetivo !== null;
-    if (paso === 2) return nivel !== null;
-    if (paso === 3) return diasSeleccionados.length > 0;
-    if (paso === 4) return lugar !== null;
-    if (paso === 5) return edad.trim().length > 1 && parseInt(edad) > 10;
-    if (paso === 6) return genero !== null;
-    return false;
-  };
+  const totalPasos = PASOS.length;
+  const infoPaso = PASOS[pasoActual];
 
-  const avanzar = async () => {
-    if (paso < TOTAL_PASOS) {
-      setPaso(p => p + 1);
-      return;
+  useEffect(() => {
+    if (!generando) return;
+    const interval = setInterval(() => setMensajeCarga(prev => (prev + 1) % 5), 2000);
+    return () => clearInterval(interval);
+  }, [generando]);
+
+  const avanzar = (nuevasResp: any) => {
+    if (pasoActual < totalPasos - 1) {
+      setPasoActual(prev => prev + 1);
+    } else {
+      finalizarCuestionario(nuevasResp);
     }
-    await guardarPerfil();
   };
 
-  const guardarPerfil = async () => {
-    try {
-      setGuardando(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Sin sesión');
+  const handleSelect = (optionId: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const nuevas = { ...respuestas, [infoPaso.id]: optionId };
+    setRespuestas(nuevas);
+    avanzar(nuevas);
+  };
 
-      // Convertimos edad a un aproximado de fecha nacimiento para tu tabla
-      const anioNacimiento = new Date().getFullYear() - parseInt(edad);
-      const fechaNacimiento = `${anioNacimiento}-01-01`;
+  const handleCustomNext = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const nuevas = { ...respuestas };
+    if (infoPaso.id === 'peso') nuevas.peso_kg = parseInt(pesoInput);
+    if (infoPaso.id === 'estatura') nuevas.altura_cm = parseInt(estaturaInputCM);
+    setRespuestas(nuevas);
+    avanzar(nuevas);
+  };
 
-      const { error } = await supabase
-        .from('USUARIOS')
-        .upsert({
-          id: user.id,
-          email: user.email,
-          nombre: user.user_metadata?.full_name?.split(' ')[0] || 'Usuario',
-          objetivo: objetivo,
-          nivel: nivel,
-          genero: genero,
-          fecha_nacimiento: fechaNacimiento,
-          dias_entrenamiento: diasSeleccionados,
-          // NOTA: Asegúrate de tener una columna "lugar_entrenamiento" (int) en tu tabla USUARIOS
-          fecha_registro: new Date().toISOString(),
-        });
+  const volverAtras = () => {
+    if (pasoActual > 0) setPasoActual(prev => prev - 1);
+  };
 
-      if (error) throw error;
-      await AsyncStorage.setItem(`onboarding_${user.id}`, 'done');
-      router.replace('/(tabs)/home');
+// 🚀 DENTRO DE finalizarCuestionario EN TU ONBOARDING index.tsx
+const finalizarCuestionario = async (perfilFinal: any) => {
+  try {
+    setGenerando(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('Usuario no encontrado');
+
+    // 1. Catálogo de ejercicios (Para que la IA tenga los UUIDs correctos)
+    const { data: catalogoDB } = await supabase.from('EJERCICIOS').select('id, nombre');
+    if (!catalogoDB) throw new Error('No se pudo cargar el catálogo');
+
+    // 2. Generar Plan con Gemini
+    const planFinal = await generateRoutine(perfilFinal, catalogoDB);
+
+    // 3. Bucle para guardar cada día (RUTINA + EJERCICIOS)
+    for (const dia of planFinal) {
       
-    } catch (e: any) {
-      console.error('Error guardando perfil:', e.message);
-    } finally {
-      setGuardando(false);
-    }
-  };
+      // A) INSERTAR LA RUTINA (EL PADRE)
+      const { data: rutinaData, error: errR } = await supabase
+        .from('RUTINAS')
+        .insert([{ 
+          user_id: user.id, 
+          nombre: dia.dia_nombre, 
+          descripcion: dia.descripcion,
+          objetivo_id: perfilFinal.objetivo === 'perder_peso' ? 1 : perfilFinal.objetivo === 'hipertrofia' ? 2 : 3,
+          nivel_id: perfilFinal.nivel === 'principiante' ? 1 : perfilFinal.nivel === 'intermedio' ? 2 : 3,
+          dia_semana: dia.dia_semana_sugerido, 
+          duracion_min: perfilFinal.duracion || 45,
+          es_personalizada: true
+        }])
+        .select()
+        .single();
 
-  const titulos = [
-    '¿Cuál es tu objetivo?', '¿Cuál es tu nivel?', '¿Qué días vas a entrenar?',
-    '¿Dónde entrenarás?', '¿Cuántos años tienes?', '¿Cómo te identificas?'
-  ];
+      if (errR) {
+        console.error("Error al crear Rutina:", errR.message);
+        continue; // Si falla la rutina, saltamos al siguiente día
+      }
+
+      // B) PREPARAR LOS EJERCICIOS (LOS HIJOS)
+      // Usamos el ID que acabamos de recibir: rutinaData.id
+    const ejerciciosAInsertar = dia.ejercicios.map((ej: any, idx: number) => ({
+  rutina_id: rutinaData.id,
+  ejercicio_id: ej.ejercicio_id,
+  orden: idx + 1,
+  series: parseInt(ej.series) || 3,
+  reps: parseInt(ej.repeticiones) || 12,
+  descanso_seg: parseInt(ej.descanso_segundos) || 60,
+  // ⚡ CAMBIO AQUÍ: Si Gemini manda es_calentamiento, lo usamos. 
+  // Si no, por defecto los primeros 2 del día son calentamiento (lógica de respaldo)
+  es_calentamiento: ej.es_calentamiento !== undefined ? ej.es_calentamiento : (idx < 2)
+}));
+
+      // C) INSERTAR EN RUTINA_EJERCICIOS
+      if (ejerciciosAInsertar.length > 0) {
+        const { error: errEj } = await supabase
+          .from('RUTINA_EJERCICIOS')
+          .insert(ejerciciosAInsertar);
+
+        if (errEj) {
+          console.error(`Error insertando ejercicios para ${dia.dia_nombre}:`, errEj.message);
+        } else {
+          console.log(`✅ ${ejerciciosAInsertar.length} ejercicios guardados para: ${dia.dia_nombre}`);
+        }
+      }
+    }
+
+    // 4. Finalizar Onboarding
+    const diasIds = planFinal.map((d: any) => d.dia_semana_sugerido);
+    await supabase.from('USUARIOS').upsert({
+      id: user.id,
+      email: user.email,
+      dias_entrenamiento: diasIds
+    });
+
+    await AsyncStorage.setItem(`onboarding_${user.id}`, 'done');
+    router.replace('/(tabs)/home');
+
+  } catch (e: any) {
+    console.error('❌ FALLO TOTAL:', e.message);
+    Alert.alert('Error', e.message);
+  } finally {
+    setGenerando(false);
+  }
+};
+  if (generando) {
+    const msgs = ["Analizando biometría...", "Consultando catálogo...", "Generando ADN Fitness...", "Ajustando series...", "Finalizando protocolo..."];
+    return (
+      <View style={s.loaderContainer}>
+        <StatusBar barStyle="light-content" />
+        <LinearGradient colors={['#000', '#111']} style={StyleSheet.absoluteFill} />
+        <ActivityIndicator size="large" color={colors.primary} style={{transform: [{scale: 1.5}], marginBottom: 30}} />
+        <Text style={s.loaderTitle}>PROCESANDO PROTOCOLO</Text>
+        <Text style={s.loaderSub}>{msgs[mensajeCarga]}</Text>
+      </View>
+    );
+  }
 
   return (
-    <View style={s.container}>
-      <StatusBar barStyle="light-content" />
-
-      <View style={s.progressBar}>
-        {Array.from({ length: TOTAL_PASOS }).map((_, i) => (
-          <View key={i} style={[s.progressDot, i < paso && s.progressDotActive]} />
-        ))}
+    <KeyboardAvoidingView style={[s.container, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={s.header}>
+        {pasoActual > 0 && (
+          <TouchableOpacity onPress={volverAtras} style={s.backBtn}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
+        )}
+        <View style={s.progressContainer}>
+          <View style={[s.progressBar, { width: `${((pasoActual + 1) / totalPasos) * 100}%` }]} />
+        </View>
+        <Text style={s.stepText}>{pasoActual + 1}/{totalPasos}</Text>
       </View>
 
-      <View style={s.headerArea}>
-        <Text style={s.stepLabel}>PASO {paso} DE {TOTAL_PASOS}</Text>
-        <Text style={s.titulo}>{titulos[paso - 1]}</Text>
-      </View>
+      <ScrollView contentContainerStyle={s.scroll}>
+        <View style={s.titleSection}>
+          <Text style={s.titulo}>{infoPaso.titulo}</Text>
+          <Text style={s.subtitulo}>{infoPaso.subtitulo}</Text>
+        </View>
 
-      <ScrollView style={s.opcionesScroll} showsVerticalScrollIndicator={false} contentContainerStyle={s.opcionesContent}>
-        
-        {paso === 1 && OBJETIVOS.map(op => (
-          <TouchableOpacity key={op.id} style={[s.opcion, objetivo === op.id && s.opcionActiva]} onPress={() => setObjetivo(op.id)}>
-            <Ionicons name={op.icon as any} size={24} color={objetivo === op.id ? colors.primary : colors.textSecondary} style={s.opcionIconSimple} />
-            <View style={s.opcionTexto}><Text style={s.opcionLabel}>{op.label}</Text></View>
-          </TouchableOpacity>
-        ))}
-
-        {paso === 2 && NIVELES.map(op => (
-          <TouchableOpacity key={op.id} style={[s.opcion, nivel === op.id && s.opcionActiva]} onPress={() => setNivel(op.id)}>
-            <Ionicons name={op.icon as any} size={24} color={nivel === op.id ? colors.primary : colors.textSecondary} style={s.opcionIconSimple} />
-            <View style={s.opcionTexto}><Text style={s.opcionLabel}>{op.label}</Text></View>
-          </TouchableOpacity>
-        ))}
-
-        {paso === 3 && (
-          <View style={s.diasGrid}>
-            {DIAS_SEMANA.map(op => (
-              <TouchableOpacity key={op.id} style={[s.diaCard, diasSeleccionados.includes(op.id) && s.diaCardActivo]} onPress={() => toggleDia(op.id)}>
-                <Text style={[s.diaNum, diasSeleccionados.includes(op.id) && s.diaNumActivo]}>{op.short}</Text>
+        {infoPaso.custom ? (
+          <View style={s.customContainer}>
+            <View style={s.inputRow}>
+              <TextInput
+                style={s.bigInput}
+                keyboardType="number-pad"
+                value={infoPaso.id === 'peso' ? pesoInput : estaturaInputCM}
+                onChangeText={infoPaso.id === 'peso' ? setPesoInput : setEstaturaInputCM}
+                autoFocus
+              />
+              <Text style={s.unitText}>{infoPaso.id === 'peso' ? 'kg' : 'cm'}</Text>
+            </View>
+            <TouchableOpacity style={s.continueBtn} onPress={handleCustomNext}>
+              <Text style={s.continueBtnText}>Continuar</Text>
+              <Ionicons name="arrow-forward" size={20} color="#000" />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={s.optionsContainer}>
+            {infoPaso.opciones?.map((op) => (
+              <TouchableOpacity
+                key={op.id}
+                style={[s.card, respuestas[infoPaso.id] === op.id && s.cardSelected]}
+                onPress={() => handleSelect(op.id)}
+              >
+                <View style={[s.iconBox, respuestas[infoPaso.id] === op.id && s.iconBoxSelected]}>
+                   <Ionicons name={op.icon as any} size={26} color={respuestas[infoPaso.id] === op.id ? '#000' : colors.primary} />
+                </View>
+                <View style={{flex: 1}}>
+                  <Text style={[s.cardLabel, respuestas[infoPaso.id] === op.id && {color: colors.primary}]}>{op.label}</Text>
+                  <Text style={s.cardDesc}>{op.desc}</Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>
         )}
-
-        {/* 🚀 NUEVO PASO 4: LUGAR */}
-        {paso === 4 && LUGARES.map(op => (
-          <TouchableOpacity key={op.id} style={[s.opcion, lugar === op.id && s.opcionActiva]} onPress={() => setLugar(op.id)}>
-            <Ionicons name={op.icon as any} size={24} color={lugar === op.id ? colors.primary : colors.textSecondary} style={s.opcionIconSimple} />
-            <View style={s.opcionTexto}>
-              <Text style={s.opcionLabel}>{op.label}</Text>
-              <Text style={s.opcionDesc}>{op.desc}</Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-
-        {/* 🚀 NUEVO PASO 5: EDAD */}
-        {paso === 5 && (
-          <View style={s.inputContainer}>
-            <TextInput
-              style={s.input}
-              keyboardType="numeric"
-              maxLength={2}
-              placeholder="Ej: 28"
-              placeholderTextColor={colors.textMuted}
-              value={edad}
-              onChangeText={setEdad}
-              autoFocus
-            />
-            <Text style={s.inputSuffix}>años</Text>
-          </View>
-        )}
-
-        {paso === 6 && GENEROS.map(op => (
-          <TouchableOpacity key={op.id} style={[s.opcion, genero === op.id && s.opcionActiva]} onPress={() => setGenero(op.id)}>
-            <Ionicons name={op.icon as any} size={24} color={genero === op.id ? colors.primary : colors.textSecondary} style={s.opcionIconSimple} />
-            <View style={s.opcionTexto}><Text style={s.opcionLabel}>{op.label}</Text></View>
-          </TouchableOpacity>
-        ))}
-
       </ScrollView>
-
-      <View style={s.footer}>
-        {paso > 1 && (
-          <TouchableOpacity style={s.backBtn} onPress={() => setPaso(p => p - 1)}>
-            <Ionicons name="arrow-back" size={20} color={colors.textSecondary} />
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity style={[s.nextBtn, !puedeAvanzar() && s.nextBtnDisabled]} onPress={avanzar} disabled={!puedeAvanzar() || guardando}>
-          <Text style={s.nextBtnText}>{guardando ? 'Guardando...' : paso < TOTAL_PASOS ? 'Siguiente' : '¡Empezar!'}</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.lg, paddingTop: 60, paddingBottom: 40 },
-  progressBar: { flexDirection: 'row', gap: 6, marginBottom: spacing.xl },
-  progressDot: { flex: 1, height: 4, borderRadius: 2, backgroundColor: colors.surface },
-  progressDotActive: { backgroundColor: colors.primary },
-  headerArea: { marginBottom: spacing.xl },
-  stepLabel: { fontSize: 11, color: colors.primary, fontWeight: '900', letterSpacing: 2, marginBottom: 8 },
-  titulo: { fontSize: 30, fontWeight: '900', color: colors.textPrimary, marginBottom: 8 },
-  opcionesScroll: { flex: 1 },
-  opcionesContent: { gap: 12, paddingBottom: 20 },
-  opcion: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.md, borderWidth: 1.5, borderColor: 'transparent' },
-  opcionActiva: { borderColor: colors.primary, backgroundColor: 'rgba(255,77,0,0.1)' },
-  opcionIconSimple: { marginRight: spacing.md },
-  opcionTexto: { flex: 1 },
-  opcionLabel: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
-  opcionDesc: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  diasGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  diaCard: { width: (width - spacing.lg * 2 - 20) / 3, backgroundColor: colors.surface, borderRadius: radius.lg, paddingVertical: spacing.xl, alignItems: 'center', borderWidth: 1.5, borderColor: 'transparent' },
-  diaCardActivo: { borderColor: colors.primary, backgroundColor: colors.primary },
-  diaNum: { fontSize: 18, fontWeight: '900', color: colors.textSecondary },
-  diaNumActivo: { color: '#000' },
-  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.lg },
-  input: { flex: 1, color: colors.textPrimary, fontSize: 32, fontWeight: 'bold', paddingVertical: 20 },
-  inputSuffix: { color: colors.textSecondary, fontSize: 20, fontWeight: '600' },
-  footer: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
-  backBtn: { width: 56, height: 56, borderRadius: radius.full, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.border },
-  nextBtn: { flex: 1, height: 56, borderRadius: radius.full, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
-  nextBtnDisabled: { backgroundColor: colors.surface },
-  nextBtnText: { color: '#000', fontWeight: '900', fontSize: 16 },
+  container: { flex: 1, backgroundColor: '#000' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, height: 60, gap: 15 },
+  backBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111', borderRadius: 20 },
+  progressContainer: { flex: 1, height: 6, backgroundColor: '#111', borderRadius: 3, overflow: 'hidden' },
+  progressBar: { height: '100%', backgroundColor: colors.primary },
+  stepText: { color: '#666', fontSize: 12, fontWeight: 'bold' },
+  scroll: { paddingHorizontal: 20, paddingTop: 30, paddingBottom: 50 },
+  titleSection: { marginBottom: 30 },
+  titulo: { fontSize: 32, fontWeight: '900', color: '#fff', marginBottom: 8 },
+  subtitulo: { fontSize: 16, color: '#999' },
+  optionsContainer: { gap: 15 },
+  card: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0C0C0C', padding: 20, borderRadius: 15, borderWidth: 1, borderColor: '#1A1A1A' },
+  cardSelected: { borderColor: colors.primary, backgroundColor: 'rgba(255, 77, 0, 0.05)' },
+  iconBox: { width: 52, height: 52, borderRadius: 12, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  iconBoxSelected: { backgroundColor: colors.primary },
+  cardLabel: { fontSize: 18, fontWeight: 'bold', color: '#fff' },
+  cardDesc: { fontSize: 12, color: '#666' },
+  customContainer: { alignItems: 'center', marginTop: 20 },
+  inputRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 50 },
+  bigInput: { color: '#fff', fontSize: 72, fontWeight: '900', borderBottomWidth: 2, borderBottomColor: colors.primary, textAlign: 'center', minWidth: 120 },
+  unitText: { color: '#666', fontSize: 24, marginLeft: 10, marginBottom: 15 },
+  continueBtn: { backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 30, width: '100%', gap: 10 },
+  continueBtnText: { color: '#000', fontSize: 18, fontWeight: '900' },
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  loaderTitle: { fontSize: 20, fontWeight: '900', color: '#fff', letterSpacing: 2, marginBottom: 10 },
+  loaderSub: { fontSize: 14, color: '#666' },
 });

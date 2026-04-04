@@ -8,7 +8,6 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   
   // 🔥 CÁLCULO PREMIUM: Calculamos cuánto mide el obstáculo de abajo
-  // Si es Android, le damos el espacio del sistema + 10px extra de respiro
   const paddingBottom = Platform.OS === 'android' ? insets.bottom + 10 : insets.bottom;
   const height = Platform.OS === 'android' ? 65 + insets.bottom : 85;
 
@@ -28,6 +27,7 @@ export default function TabLayout() {
         tabBarLabelStyle: styles.label,
       }}
     >
+      {/* 🟢 TABS VISIBLES (LOS 4 FANTÁSTICOS) */}
       <Tabs.Screen
         name="home"
         options={{
@@ -56,16 +56,28 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="community"
+        name="profile"
         options={{
-          title: 'Comunidad',
+          title: 'Perfil',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="people" size={size} color={color} />
+            <Ionicons name="person" size={size} color={color} />
           ),
         }}
       />
-      {/* Escondemos el tab de profile si se entra desde el Avatar de la Home */}
-      <Tabs.Screen name="profile" options={{ href: null }} />
+
+      {/* 🔴 TABS OCULTOS (Existen, puedes navegar a ellos, pero no tienen botón abajo) */}
+      <Tabs.Screen 
+        name="community" 
+        options={{ href: null }} 
+      />
+      <Tabs.Screen 
+        name="stats" 
+        options={{ href: null }} 
+      />
+      <Tabs.Screen 
+        name="history" 
+        options={{ href: null }} 
+      />
     </Tabs>
   );
 }

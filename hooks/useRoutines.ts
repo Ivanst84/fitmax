@@ -34,6 +34,7 @@ export function useRoutines() {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) throw new Error('No sesión');
 
+      // 1. Traer perfil
       const { data: perfil } = await supabase
         .from('USUARIOS')
         .select('nivel, objetivo, dias_entrenamiento')
@@ -42,9 +43,10 @@ export function useRoutines() {
 
       const nivelId = perfil?.nivel || 1;
       const objetivoId = perfil?.objetivo || 1;
-      const diasElegidos: number[] = perfil?.dias_entrenamiento || [];
+      const diasElegidos: number[] = perfil?.dias_entrenamiento || [1, 2, 3, 4, 5]; // Fallback
       diasElegidos.sort((a, b) => a - b);
 
+      // 2. Traer rutinas de IA (Propias) y del Sistema
       const { data, error: supabaseError } = await supabase
         .from('RUTINAS')
         .select('*')
@@ -52,74 +54,93 @@ export function useRoutines() {
 
       if (supabaseError) throw new Error(supabaseError.message);
 
-      const rutinasSistema = (data || []).filter(
-        r => r.user_id === null && r.nivel_id === nivelId && r.objetivo_id === objetivoId
-      );
-      const rutinasPropias = (data || []).filter(r => r.user_id === user.id);
+      const rutinasSistema = (data || []).filter(r => r.user_id === null && r.nivel_id === nivelId && r.objetivo_id === objetivoId);
+      
+      // ORDENAMOS las rutinas creadas por la IA (Día 1, Día 2, etc.)
+      const rutinasPropias = (data || []).filter(r => r.user_id === user.id).sort((a, b) => (a.dia_semana || 0) - (b.dia_semana || 0));
 
+      // El "Pool" o lista de rutinas a usar (Prioridad a las de la IA)
+      const poolRutinas = rutinasPropias.length > 0 ? rutinasPropias : rutinasSistema;
+
+      // ======================================================================
+      // 🚀 MAGIA: LÓGICA DE PROGRESIÓN (Para que el Viernes sea Día 1)
+      // ======================================================================
+      
+      // A. Buscamos qué rutinas YA HIZO el usuario esta semana
+      const hoyFecha = new Date();
+      const diaSemanaAct = hoyFecha.getDay() || 7;
+      const lunes = new Date(hoyFecha);
+      lunes.setDate(hoyFecha.getDate() - diaSemanaAct + 1);
+      lunes.setHours(0, 0, 0, 0);
+
+      const { data: historial } = await supabase
+        .from('HISTORIAL_SESIONES')
+        .select('rutina_id')
+        .eq('user_id', user.id)
+        .gte('created_at', lunes.toISOString());
+
+      // Lista de IDs de rutinas que ya terminó esta semana
+      const completadasSemana = historial?.map(h => h.rutina_id) || [];
+
+      // ======================================================================
+      // 📅 CONSTRUIR EL CALENDARIO DE LA SEMANA (Para la pestaña Rutinas)
+      // ======================================================================
       const semanaGenerada: RutinaSemana[] = [];
-      let indexSistema = 0;
+      let indexPool = 0;
 
-      // Construimos los 7 días exactos
       for (let dia = 1; dia <= 7; dia++) {
         const esDiaEntrenamiento = diasElegidos.includes(dia);
-        const rutinaPropiaDelDia = rutinasPropias.find(r => r.dia_semana === dia);
 
-        // 1. PRIORIDAD ABSOLUTA: Rutina Creada por el Usuario
-        if (rutinaPropiaDelDia) {
-          semanaGenerada.push({
-            ...rutinaPropiaDelDia,
-            dia_real_asignado: dia,
-            isRest: false,
-            isEmpty: false,
-            isCustom: true
-          });
-          continue;
-        }
-
-        // 2. DÍA DE DESCANSO
         if (!esDiaEntrenamiento) {
           semanaGenerada.push({
-            id: `rest-${dia}`,
-            nombre: 'Día de Descanso',
-            dia_real_asignado: dia,
-            isRest: true,
-            isEmpty: false,
-            isCustom: false
+            id: `rest-${dia}`, nombre: 'Día de Descanso', dia_real_asignado: dia,
+            isRest: true, isEmpty: false, isCustom: false
           });
           continue;
         }
 
-        // 3. RUTINA DEL SISTEMA CON LOOP INFINITO (Magia)
-        if (rutinasSistema.length > 0) {
-          const rutinaSistemaDisponible = rutinasSistema[indexSistema % rutinasSistema.length];
+        if (poolRutinas.length > 0) {
+          const rutina = poolRutinas[indexPool % poolRutinas.length];
           semanaGenerada.push({
-            ...rutinaSistemaDisponible,
-            dia_real_asignado: dia,
+            ...rutina, dia_real_asignado: dia, isRest: false, isEmpty: false, isCustom: rutinasPropias.length > 0
+          });
+          indexPool++;
+        } else {
+          semanaGenerada.push({
+            id: `empty-${dia}`, nombre: 'Entrenamiento Libre', dia_real_asignado: dia,
+            isRest: false, isEmpty: true, isCustom: false
+          });
+        }
+      }
+      setRutinas(semanaGenerada);
+
+      // ======================================================================
+      // 🎯 ASIGNAR EL ENTRENAMIENTO DE HOY (Home Screen)
+      // ======================================================================
+      const esHoyEntrenamiento = diasElegidos.includes(diaHoyISO);
+
+      if (!esHoyEntrenamiento) {
+        // Si hoy no se entrena, le marcamos descanso
+        setRutinaHoy(semanaGenerada.find(r => r.dia_real_asignado === diaHoyISO) || null);
+      } else {
+        // ¡HOY SE ENTRENA! Buscamos la PRIMERA rutina que no haya completado esta semana
+        if (poolRutinas.length > 0) {
+          const siguientePendiente = poolRutinas.find(r => !completadasSemana.includes(r.id)) || poolRutinas[0]; // Si ya hizo todas, repite la primera
+
+          setRutinaHoy({
+            ...siguientePendiente,
+            dia_real_asignado: diaHoyISO,
             isRest: false,
             isEmpty: false,
-            isCustom: false
+            isCustom: rutinasPropias.length > 0
           });
-          indexSistema++;
-          continue;
+        } else {
+           setRutinaHoy(semanaGenerada.find(r => r.dia_real_asignado === diaHoyISO) || null);
         }
-
-        // 4. SI LA BASE DE DATOS NO TIENE NADA (Fallback de seguridad)
-        semanaGenerada.push({
-          id: `empty-${dia}`,
-          nombre: 'Entrenamiento Libre',
-          dia_real_asignado: dia,
-          isRest: false,
-          isEmpty: true,
-          isCustom: false
-        });
       }
 
-      setRutinas(semanaGenerada);
-      const hoy = semanaGenerada.find(r => r.dia_real_asignado === diaHoyISO) || null;
-      setRutinaHoy(hoy);
-
     } catch (err) {
+      console.error(err);
       setError('Error al cargar la semana.');
     } finally {
       setCargando(false);
