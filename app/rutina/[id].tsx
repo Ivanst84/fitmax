@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, StatusBar, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, StatusBar, Image } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 
+// 🚀 IMPORTAMOS EL FERRARI
+import PressableCard from '../../components/ui/PressableCard';
 import { colors, spacing, radius, typography, buttons } from '../../constants/theme';
 import { useRoutineDetail } from '../../hooks/useRoutineDetail';
 
@@ -23,9 +24,13 @@ export default function RoutineDetailScreen() {
       <View style={styles.center}>
         <Ionicons name="alert-circle-outline" size={60} color={colors.error} />
         <Text style={styles.errorText}>{error || 'Error al cargar la rutina'}</Text>
-        <TouchableOpacity style={[buttons.primary, { marginTop: 20 }]} onPress={() => refetch()}>
+        <PressableCard 
+          style={[buttons.primary, { marginTop: 20 }]} 
+          onPress={() => refetch()}
+          haptic="medium"
+        >
           <Text style={buttons.primaryText}>Reintentar</Text>
-        </TouchableOpacity>
+        </PressableCard>
       </View>
     );
   }
@@ -40,9 +45,9 @@ export default function RoutineDetailScreen() {
       }}>
         
         <View style={styles.headerNav}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <PressableCard onPress={() => router.back()} style={styles.backBtn}>
             <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
+          </PressableCard>
           <Text style={styles.navTitle}>Detalle de Rutina</Text>
           <View style={{ width: 44 }} />
         </View>
@@ -64,7 +69,7 @@ export default function RoutineDetailScreen() {
           </View>
         </View>
 
-        {/* Selector de Energía (Tu lógica es genial) */}
+        {/* Selector de Energía con Animación Física */}
         <View style={styles.energyCard}>
           <Text style={styles.energyTitle}>¿Cómo te sientes hoy?</Text>
           <View style={styles.energyRow}>
@@ -79,13 +84,12 @@ export default function RoutineDetailScreen() {
         {ejercicios.map((item) => {
           const seriesMostrar = energia === 'agotado' ? Math.max(1, item.series - 1) : item.series;
           return (
-            <TouchableOpacity 
+            <PressableCard 
               key={item.id} 
               onPress={() => router.push(`/exercise/${item.ejercicio_id}`)} 
               style={styles.exerciseCard}
             >
               <View style={styles.imgBox}>
-                {/* Fallback de imagen porque tu tabla no tiene columna de imagen_url */}
                 {item.ejercicio?.imagen_url ? (
                   <Image source={{ uri: item.ejercicio.imagen_url }} style={styles.img} />
                 ) : (
@@ -99,29 +103,39 @@ export default function RoutineDetailScreen() {
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={20} color={colors.border} />
-            </TouchableOpacity>
+            </PressableCard>
           );
         })}
       </ScrollView>
 
+      {/* Footer Fijo con Botón de Acción Principal (CTA) */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
-        <TouchableOpacity style={buttons.primary} onPress={() => router.push({ pathname: "/workout/session", params: { rutinaId: id, nivelEnergia: energia } })}>
+        <PressableCard 
+          style={[buttons.primary, { flexDirection: 'row' }]} 
+          onPress={() => router.push({ pathname: "/workout/session", params: { rutinaId: id, nivelEnergia: energia } })}
+          glowColor={colors.primary} // 👈 ¡EFECTO GLOW PARA EL BOTÓN PRINCIPAL!
+          haptic="heavy" // 👈 UN CLIC MÁS FUERTE PARA EL COMIENZO
+        >
           <Text style={buttons.primaryText}>EMPEZAR ENTRENAMIENTO</Text>
           <Ionicons name="play" size={20} color="#000" style={{ marginLeft: 8 }} />
-        </TouchableOpacity>
+        </PressableCard>
       </View>
     </View>
   );
 }
 
-// (EnergyBtn y estilos sigan igual que los tenías, están perfectos)r
+// Componente Interno para los botones de energía mejorado
 function EnergyBtn({ icon, label, activo, onPress, type }: any) {
   const activeColor = type === 'agotado' ? colors.warning : type === 'bestia' ? colors.success : colors.primary;
   return (
-    <TouchableOpacity style={[styles.energyBtn, activo && { borderColor: activeColor, backgroundColor: activeColor + '15' }]} onPress={onPress} activeOpacity={0.7}>
+    <PressableCard 
+      style={[styles.energyBtn, activo && { borderColor: activeColor, backgroundColor: activeColor + '15' }]} 
+      onPress={onPress}
+      haptic="light"
+    >
       <Ionicons name={icon} size={26} color={activo ? activeColor : colors.textMuted} />
       <Text style={[styles.energyLabel, activo && { color: activeColor }]}>{label}</Text>
-    </TouchableOpacity>
+    </PressableCard>
   );
 }
 
@@ -142,11 +156,9 @@ const styles = StyleSheet.create({
   sectionTitle: { ...typography.h2, marginBottom: spacing.md },
   energyCard: { backgroundColor: colors.surface, padding: spacing.lg, borderRadius: radius.lg, marginBottom: spacing.xl, borderWidth: 1, borderColor: colors.border },
   energyTitle: { ...typography.label, marginBottom: 2 },
-  energySub: { ...typography.small, marginBottom: spacing.md },
-  energyRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
+  energyRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
   energyBtn: { flex: 1, alignItems: 'center', padding: spacing.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
   energyLabel: { ...typography.caption, marginTop: 8 },
-  energyFeedback: { ...typography.small, fontStyle: 'italic', textAlign: 'center', marginTop: 8 },
   exerciseCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, padding: spacing.sm, borderRadius: radius.lg, marginBottom: spacing.md },
   imgBox: { width: 60, height: 60, borderRadius: radius.md, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   img: { width: '100%', height: '100%' },

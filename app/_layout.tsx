@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
-
+import { GestureHandlerRootView } from 'react-native-gesture-handler'; // 👈 Importado
 import { useAuth } from '../hooks/useAuth';
 import { colors } from '../constants/theme';
 
@@ -63,26 +63,29 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      {/* 4. Usamos animation: 'fade' o 'none' para transiciones de stack ultra suaves */}
-      <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(onboarding)" />
-        <Stack.Screen name="(tabs)" />
-        
-        <Stack.Screen 
-          name="exercise/[id]" 
-          options={{ presentation: 'modal', animation: 'slide_from_bottom' }} 
-        />
-        <Stack.Screen 
-          name="rutina/[id]" 
-          options={{ animation: 'slide_from_right' }} // Transición nativa premium
-        />
-        <Stack.Screen 
-          name="workout/session" 
-          options={{ gestureEnabled: false, animation: 'slide_from_bottom' }} 
-        />
-      </Stack>
-    </SafeAreaProvider>
+    // 👇 AQUÍ ESTÁ LA MAGIA: Envolvemos TODO con el detector de gestos 👇
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        {/* 4. Usamos animation: 'fade' o 'none' para transiciones de stack ultra suaves */}
+        <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
+          <Stack.Screen name="(auth)" />
+          <Stack.Screen name="(onboarding)" />
+          <Stack.Screen name="(tabs)" />
+          
+          <Stack.Screen 
+            name="exercise/[id]" 
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }} 
+          />
+          <Stack.Screen 
+            name="rutina/[id]" 
+            options={{ animation: 'slide_from_right' }} // Transición nativa premium
+          />
+          <Stack.Screen 
+            name="workout/session" 
+            options={{ gestureEnabled: false, animation: 'slide_from_bottom' }} 
+          />
+        </Stack>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

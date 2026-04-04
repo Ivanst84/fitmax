@@ -23,61 +23,64 @@ export function useRoutineDetail(id: string | undefined): UseRoutineDetailResult
       setCargando(true);
       setError(null);
 
-      // 🔍 Consulta ajustada a tu SQL REAL (Sin imagen_url porque no existe en tu tabla)
-      const { data, error: fetchError } = await supabase
+      // 1. Traer Rutina
+      const { data: rutinaData, error: rutinaError } = await supabase
         .from('RUTINAS')
-        .select(`
-          *,
-          RUTINA_EJERCICIOS (
-            id,
-            rutina_id,
-            ejercicio_id,
-            series,
-            reps,
-            orden,
-            descanso_seg,
-            es_calentamiento,
-            EJERCICIOS (
-              nombre,
-              descripcion,
-              video_url,
-              duracion_seg,
-              es_por_tiempo,
-              equipo_id
-            )
-          )
-        `)
+        .select('*')
         .eq('id', id)
         .single();
 
-      if (fetchError) throw fetchError;
+      if (rutinaError) throw rutinaError;
 
-      // 1. Desestructuramos la respuesta (Mayúsculas de la DB)
-      const { RUTINA_EJERCICIOS, ...rutinaData } = (data as any) || {};
+      // 2. Traer Relaciones (RUTINA_EJERCICIOS)
+      const { data: relaciones, error: relError } = await supabase
+        .from('RUTINA_EJERCICIOS')
+        .select(`
+          id,
+          rutina_id,
+          ejercicio_id,
+          series,
+          reps,
+          orden,
+          descanso_seg,
+          es_calentamiento,
+          EJERCICIOS (*)
+        `)
+        .eq('rutina_id', id);
 
-      // 2. Mapeo al formato que tu pantalla RoutineDetailScreen ya usa
-      const formatted = (RUTINA_EJERCICIOS || [])
-        .sort((a: any, b: any) => a.orden - b.orden)
-        .map((rel: any) => ({
-          id: String(rel.id),
-          rutina_id: rel.rutina_id,
-          ejercicio_id: rel.ejercicio_id,
-          series: rel.series || 0,
-          repeticiones: String(rel.reps || '0'), // Mapeo reps -> repeticiones
-          descanso_seg: rel.descanso_seg || 60,
-          es_calentamiento: rel.es_calentamiento || false,
-          // Unimos los datos del ejercicio hijo al objeto esperado por la UI
-          ejercicio: rel.EJERCICIOS || { 
-            nombre: 'Cargando ejercicio...', 
-            imagen_url: null // Placeholder ya que no tienes columna de imagen
-          }
-        }));
+      if (relError) throw relError;
+
+      // 🔍 DEBUG: Mira esto en tu terminal de VS Code / Metro
+      console.log('--- RELACIONES ENCONTRADAS:', relaciones?.length);
+
+      // 3. Mapeo Resiliente
+      const formatted = (relaciones || [])
+        .sort((a, b) => (a.orden || 0) - (b.orden || 0))
+        .map((rel: any) => {
+          // 🛡️ El truco: Buscamos el objeto EJERCICIOS sin importar si viene en mayúsculas o minúsculas
+          const infoCatalogo = rel.EJERCICIOS || rel.ejercicios;
+
+          return {
+            id: String(rel.id),
+            rutina_id: rel.rutina_id,
+            ejercicio_id: rel.ejercicio_id,
+            series: rel.series || 0,
+            repeticiones: String(rel.reps || '0'),
+            descanso_seg: rel.descanso_seg || 60,
+            es_calentamiento: rel.es_calentamiento || false,
+            ejercicio: infoCatalogo || { 
+              nombre: 'No encontrado en catálogo', 
+              descripcion: '',
+              video_url: null
+            }
+          };
+        });
 
       setRutina(rutinaData as Rutina);
       setEjercicios(formatted);
 
     } catch (err: any) {
-      console.error('❌ Error en useRoutineDetail:', err.message);
+      console.error('❌ Error detallado en useRoutineDetail:', err.message);
       setError(err.message);
     } finally {
       setCargando(false);

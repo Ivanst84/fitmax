@@ -80,18 +80,20 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     setSetsData({ ...setsData, [exerciseId]: newSets });
   };
 
+  // 🚀 LA FUNCIÓN QUE CORREGIMOS PARA QUE DEVUELVA EL ID 🚀
   const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: number, vol: number, sets: number, kcal: number) => {
     try {
       setIsSaving(true);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return false;
+      
+      if (!user) return null; // 👈 Antes decía "return false", ahora es null
 
       // 1. Guarda la sesión general
       const { data: sesion, error: sErr } = await supabase.from('HISTORIAL_SESIONES').insert({
         user_id: user.id, rutina_id: rutinaId, nombre_rutina: nombre,
         duracion_segundos: segundos, volumen_total_kg: vol,
         sets_completados: sets, calorias_quemadas: kcal
-      }).select().single();
+      }).select('id').single(); // 👈 Aseguramos pedir el ID
 
       if (sErr) throw sErr;
 
@@ -100,8 +102,8 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
         sesion_id: sesion.id,
         user_id: user.id,
         ejercicio_id: ex.ejercicio_id,
-        nombre_ejercicio: ex.ejercicio?.nombre || 'Ejercicio sin nombre', // Evita nulos
-        series_json: setsData[ex.id] || [] // Evita nulos
+        nombre_ejercicio: ex.ejercicio?.nombre || 'Ejercicio sin nombre',
+        series_json: setsData[ex.id] || [] 
       }));
 
       // 3. Inserta y captura el error exacto 🚨
@@ -109,15 +111,16 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
       
       if (logErr) {
         console.error("❌ ERROR SUPABASE AL GUARDAR HISTORIAL_EJERCICIOS:", logErr.message, logErr.details);
-        throw logErr; // Lanzamos el error para que la UI sepa que falló
+        throw logErr;
       } else {
         console.log(`✅ ¡ÉXITO! ${logs.length} ejercicios guardados en el historial.`);
       }
 
-      return true;
+      return sesion.id; // 👈 ¡EL CAMBIO MÁGICO! Devolvemos el string del ID, no un "true"
+
     } catch (e) {
       console.error("❌ Fallo general al guardar:", e);
-      return false;
+      return null; // 👈 Antes decía "return false", ahora es null
     } finally { 
       setIsSaving(false); 
     }

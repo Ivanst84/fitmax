@@ -1,85 +1,61 @@
-import { useState, useEffect } from 'react';
+import { useState, useCallback } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
-import { useAuth } from './useAuth';
+
+export interface StreakData {
+  rachaActual: number;
+  mejorRacha: number;
+  entrenandoHoy: boolean;
+  enRiesgo: boolean;
+  mensajeEstado: string | null;
+  proximoHito: number;
+}
+
+const getLocalDateString = (): string => {
+  return new Date().toLocaleDateString('sv');
+};
 
 export function useStreak() {
-  const { session } = useAuth();
-  const [streak, setStreak] = useState(0);
+  const [data, setData] = useState<StreakData>({
+    rachaActual: 0,
+    mejorRacha: 0,
+    entrenandoHoy: false,
+    enRiesgo: false,
+    mensajeEstado: null,
+    proximoHito: 7,
+  });
   const [loading, setLoading] = useState(true);
-const diaJs = new Date().getDay(); 
-      const diaHoyISO = diaJs === 0 ? 7 : diaJs; // 1 = Lunes, 7 = Domingo
-      const nombresDias = ['', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
-      const diaNombreHoy = nombresDias[diaHoyISO];
-  useEffect(() => {
-    if (session?.user?.id) {
-      calculateStreak();
-    }
-  }, [session]);
 
-  const calculateStreak = async () => {
+  const fetchStreak = useCallback(async () => {
     try {
       setLoading(true);
-      
-      // 🚀 Buscamos las fechas en el historial del usuario
-      const { data, error } = await supabase
-        .from('HISTORIAL_SESIONES')
-        .select('fecha')
-        .eq('user_id', session?.user?.id)
-        .order('fecha', { ascending: false });
+      const todayLocal = getLocalDateString();
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_streak', {
+        p_today: todayLocal,
+      });
 
-      if (error) throw error;
-      if (!data || data.length === 0) {
-        setStreak(0);
-        return;
-      }
+      if (rpcError) throw rpcError;
 
-      // Normalizar fechas a formato YYYY-MM-DD y eliminar duplicados
-      const uniqueDates = Array.from(
-        new Set(data.map(s => s.fecha.split('T')[0]))
-      );
-
-      if (uniqueDates.length === 0) {
-        setStreak(0);
-        return;
-      }
-
-      // Lógica de conteo
-      let currentStreak = 0;
-      const today = new Date();
-      const yesterday = new Date();
-      yesterday.setDate(today.getDate() - 1);
-
-      const todayStr = today.toISOString().split('T')[0];
-      const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-      // Si no entrenó ni hoy ni ayer, la racha se rompió
-      if (!uniqueDates.includes(todayStr) && !uniqueDates.includes(yesterdayStr)) {
-        setStreak(0);
-        return;
-      }
-
-      // Empezamos a contar desde el día más reciente que entrenó
-      let checkDate = uniqueDates.includes(todayStr) ? today : yesterday;
-      
-      for (let i = 0; i < 365; i++) {
-        const checkStr = checkDate.toISOString().split('T')[0];
-        
-        if (uniqueDates.includes(checkStr)) {
-          currentStreak++;
-          checkDate.setDate(checkDate.getDate() - 1); // Restamos un día
-        } else {
-          break; // Hueco encontrado, racha terminada
-        }
-      }
-
-      setStreak(currentStreak);
-    } catch (err) {
-      console.error('❌ Error calculando racha:', err);
-      setStreak(0);
+      setData({
+        rachaActual:    rpcData.racha_actual    ?? 0,
+        mejorRacha:     rpcData.mejor_racha      ?? 0,
+        entrenandoHoy:  rpcData.entrenado_hoy    ?? false,
+        enRiesgo:        rpcData.en_riesgo        ?? false,
+        mensajeEstado:  rpcData.mensaje_estado   ?? null,
+        proximoHito:    rpcData.proximo_hito      ?? 7,
+      });
+    } catch (e) {
+      console.error('[useStreak] Error:', e);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  return { streak, loading, refetchStreak: calculateStreak };
+  useFocusEffect(
+    useCallback(() => {
+      fetchStreak();
+    }, [fetchStreak])
+  );
+
+  return { ...data, loading, refetch: fetchStreak };
 }

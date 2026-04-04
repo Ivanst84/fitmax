@@ -35,6 +35,8 @@ export const useGeminiRoutine = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
   const generateRoutine = async (respuestas: Record<string, any>, catalogoEjercicios: any[]) => {
     setLoading(true);
     setError(null);
@@ -42,125 +44,138 @@ export const useGeminiRoutine = () => {
     const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY; 
     if (!apiKey) throw new Error("Falta la clave de Gemini");
 
-    try {
-      // ======================================================================
-      // 🛡️ 1. PRE-FILTRO INTELIGENTE (EL ESCUDO ANTI-COLAPSO)
-      // ======================================================================
-      
-      // A. Determinamos el nivel numérico del usuario
-      let nivelUsuarioNum = 2; // Por defecto Intermedio
-      const nivelStr = String(respuestas.nivel).toLowerCase();
-      if (nivelStr.includes('principiante') || respuestas.nivel === 1) nivelUsuarioNum = 1;
-      if (nivelStr.includes('avanzado') || respuestas.nivel === 3) nivelUsuarioNum = 3;
+    const MAX_RETRIES = 3;
+    let attempt = 0;
 
-      // B. Filtramos: Solo enviamos ejercicios adecuados para su nivel
-      let catalogoFiltrado = catalogoEjercicios.filter(ej => {
-        const nivelEj = ej.nivel_id || 1; // Si no tiene nivel, asumimos 1
-        return nivelEj <= nivelUsuarioNum;
-      });
+    const ejecutarConReintentos = async (): Promise<any> => {
+      try {
+        // ======================================================================
+        // 🛡️ 1. PRE-FILTRO INTELIGENTE (Tu lógica intacta)
+        // ======================================================================
+        let nivelUsuarioNum = 2;
+        const nivelStr = String(respuestas.nivel).toLowerCase();
+        if (nivelStr.includes('principiante') || respuestas.nivel === 1) nivelUsuarioNum = 1;
+        if (nivelStr.includes('avanzado') || respuestas.nivel === 3) nivelUsuarioNum = 3;
 
-      // C. Mezclamos (Shuffle) para dar variedad y cortamos a máximo 70 ejercicios
-      if (catalogoFiltrado.length > 70) {
-        catalogoFiltrado = catalogoFiltrado.sort(() => 0.5 - Math.random()).slice(0, 70);
-      }
+        let catalogoFiltrado = catalogoEjercicios.filter(ej => {
+          const nivelEj = ej.nivel_id || 1;
+          return nivelEj <= nivelUsuarioNum;
+        });
 
-      // ======================================================================
-      // 🗺️ 2. MAPEO Y CREACIÓN DEL PROMPT
-      // ======================================================================
-      const mapaReferencia: Record<number, string> = {};
-      
-      // NOTA: Ahora mapeamos sobre 'catalogoFiltrado' en lugar de 'catalogoEjercicios'
-      const catalogoSimplificado = catalogoFiltrado.map((ej, index) => {
-        const idCorto = index + 1;
-        mapaReferencia[idCorto] = ej.id;
-        
-        // Bonus: Le avisamos a la IA si el ejercicio es por tiempo (ej. Planchas)
-        const infoExtra = ej.es_por_tiempo ? ' (Medir en Segundos)' : '';
-        return `#${idCorto}: ${ej.nombre}${infoExtra}`;
-      }).join('\n');
-
-      const systemInstruction = `
-        Eres un Coach Experto en Ciencias del Deporte y Fisiología Humana.
-        Tu misión es diseñar rutinas basadas en evidencia científica.
-        
-        REGLAS:
-        1. Inicia cada día con 1 o 2 ejercicios de CALENTAMIENTO/ACTIVACIÓN (cal: true).
-        2. El resto son ejercicios de fuerza/hipertrofia (cal: false).
-        3. Usa solo el catálogo proporcionado.
-        4. Responde ÚNICAMENTE un array JSON.
-
-        FORMATO JSON ESPERADO:
-        [
-          {
-            "d": 1, 
-            "n": "Nombre del Bloque", 
-            "desc": "Justificación científica",
-            "ejs": [
-              {"id": número, "s": series, "r": "reps_o_seg", "t": descanso_seg, "cal": true_o_false}
-            ]
-          }
-        ]
-      `;
-
-      // 🔥 Instrucción EXACTA de los días
-      const promptDelUsuario = `
-        PERFIL DEL USUARIO:
-        - Objetivo: ${respuestas.objetivo}
-        - Nivel: ${respuestas.nivel}
-        - Días a entrenar: ${respuestas.frecuencia}
-
-        ¡ORDEN ESTRICTA!: DEBES generar EXACTAMENTE ${respuestas.frecuencia} días de entrenamiento. Ni uno más, ni uno menos. Tu array JSON debe tener exactamente ${respuestas.frecuencia} objetos.
-
-        Catálogo:
-        ${catalogoSimplificado}
-      `;
-
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemInstruction }] },
-            contents: [{ role: 'user', parts: [{ text: promptDelUsuario }] }],
-            generationConfig: { 
-              temperature: 0.1, 
-              response_mime_type: "application/json" 
-            },
-          }),
+        if (catalogoFiltrado.length > 70) {
+          catalogoFiltrado = catalogoFiltrado.sort(() => 0.5 - Math.random()).slice(0, 70);
         }
-      );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error("❌ ERROR REAL DE GOOGLE:", JSON.stringify(errorData, null, 2));
-        throw new Error(`Google rechazó la petición: ${errorData.error?.message || "Error desconocido"}`);
+        // ======================================================================
+        // 🗺️ 2. MAPEO Y CREACIÓN DEL PROMPT (Tu mapeo intacto)
+        // ======================================================================
+        const mapaReferencia: Record<number, string> = {};
+        
+        const catalogoSimplificado = catalogoFiltrado.map((ej, index) => {
+          const idCorto = index + 1;
+          mapaReferencia[idCorto] = ej.id;
+          const infoExtra = ej.es_por_tiempo ? ' (Medir en Segundos)' : '';
+          return `#${idCorto}: ${ej.nombre}${infoExtra}`;
+        }).join('\n');
+
+        // 🔥 INSTRUCCIÓN CORREGIDA (Para forzar nombres creativos y descripciones)
+        const systemInstruction = `
+          Eres un Coach Experto en Ciencias del Deporte y Fisiología Humana.
+          Tu misión es diseñar rutinas basadas en evidencia científica.
+          
+          REGLAS ESTRICTAS:
+          1. Inicia cada día con 1 o 2 ejercicios de CALENTAMIENTO/ACTIVACIÓN (cal: true).
+          2. El resto son ejercicios de fuerza/hipertrofia (cal: false).
+          3. Usa SOLO los IDs numéricos del catálogo proporcionado.
+          4. La propiedad 'n' DEBE ser un nombre motivador (ej: "Espalda de Titán", "Piernas de Acero"). NUNCA uses "Día 1" o "Día 2".
+          5. La propiedad 'desc' DEBE explicar el enfoque del entrenamiento. NUNCA la dejes vacía.
+          6. Responde ÚNICAMENTE un array JSON.
+
+          FORMATO JSON ESPERADO:
+          [
+            {
+              "d": 1, 
+              "n": "Nombre del Bloque", 
+              "desc": "Justificación científica del día",
+              "ejs": [
+                {"id": número, "s": series, "r": "reps_o_seg", "t": descanso_seg, "cal": true_o_false}
+              ]
+            }
+          ]
+        `;
+
+        const promptDelUsuario = `
+          PERFIL DEL USUARIO:
+          - Objetivo: ${respuestas.objetivo}
+          - Nivel: ${respuestas.nivel}
+          - Días a entrenar: ${respuestas.frecuencia}
+
+          ¡ORDEN ESTRICTA!: DEBES generar EXACTAMENTE ${respuestas.frecuencia} días de entrenamiento. Ni uno más, ni uno menos. Tu array JSON debe tener exactamente ${respuestas.frecuencia} objetos.
+
+          Catálogo:
+          ${catalogoSimplificado}
+        `;
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: systemInstruction }] },
+              contents: [{ role: 'user', parts: [{ text: promptDelUsuario }] }],
+              generationConfig: { temperature: 0.2, response_mime_type: "application/json" },
+            }),
+            signal: controller.signal
+          }
+        );
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`Google API Error: ${errorData.error?.message || response.status}`);
+        }
+
+        const data = await response.json();
+        const textoCrudo = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        const resJSON = intentarRecuperarJSON(textoCrudo);
+        const diasRaw = Array.isArray(resJSON) ? resJSON : (resJSON.plan || resJSON.rutina || []);
+
+        return diasRaw.map((dia: any, index: number) => ({
+          dia_semana_sugerido: dia.d || index + 1,
+          dia_nombre: dia.n || `Día ${index + 1}`,
+          descripcion: dia.desc || "Entrenamiento del día",
+          ejercicios: (dia.ejs || []).map((e: any, idx: number) => ({
+            ejercicio_id: mapaReferencia[Number(e.id)] || e.id,
+            series: e.s || 3,
+            repeticiones: String(e.r || "12"),
+            descanso_segundos: e.t || 60,
+            es_calentamiento: e.cal === true, 
+            orden: idx + 1
+          })),
+        }));
+
+      } catch (err: any) {
+        attempt++;
+        if (attempt < MAX_RETRIES) {
+          const delay = 1000 * Math.pow(2, attempt); 
+          console.warn(`⚠️ Intento ${attempt} fallido. Reintentando en ${delay}ms...`);
+          await sleep(delay);
+          return ejecutarConReintentos();
+        }
+        throw err;
       }
+    };
 
-      const data = await response.json();
-      const textoCrudo = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
-      const resJSON = intentarRecuperarJSON(textoCrudo);
-      const diasRaw = Array.isArray(resJSON) ? resJSON : (resJSON.plan || resJSON.rutina || []);
-
-      return diasRaw.map((dia: any, index: number) => ({
-        // 🔥 Aseguramos que el día se asigne secuencialmente (1, 2, 3...)
-        dia_semana_sugerido: dia.d || index + 1,
-        dia_nombre: dia.n || `Día ${index + 1}`,
-        descripcion: dia.desc || "",
-        ejercicios: (dia.ejs || []).map((e: any, idx: number) => ({
-          ejercicio_id: mapaReferencia[Number(e.id)] || e.id,
-          series: e.s || 3,
-          repeticiones: String(e.r || "12"),
-          descanso_segundos: e.t || 60,
-          es_calentamiento: e.cal === true, 
-          orden: idx + 1
-        })),
-      }));
-
+    try {
+      return await ejecutarConReintentos();
     } catch (err: any) {
-      console.error("❌ Error useGeminiRoutine:", err.message);
-      setError(err.message);
+      console.error("❌ Error final useGeminiRoutine:", err.message);
+      setError("No se pudo generar la rutina. Revisa tu conexión.");
       throw err;
     } finally {
       setLoading(false);

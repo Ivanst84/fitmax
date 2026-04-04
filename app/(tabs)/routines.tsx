@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRoutines, RutinaSemana } from '../../hooks/useRoutines';
 import { colors, spacing, radius, typography } from '../../constants/theme';
+import PressableCard from '../../components/ui/PressableCard';
 
 const DIAS_SHORT = ['', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
 
@@ -33,20 +34,20 @@ export default function RoutinesScreen() {
     // TARJETA DE DÍA LIBRE (Para agregar)
     if (item.isEmpty) {
       return (
-        <TouchableOpacity style={s.emptyCard} activeOpacity={0.7} onPress={() => router.push('/create-routine')}>
+        <PressableCard style={s.emptyCard} onPress={() => router.push('/create-routine')}>
           <View style={s.dateCol}><Text style={s.dateTextActive}>{DIAS_SHORT[item.dia_real_asignado]}</Text></View>
           <View style={s.emptyInfo}>
             <Text style={s.emptyTitle}>Día Libre</Text>
             <Text style={s.emptySub}>Toca para crear rutina</Text>
           </View>
           <View style={s.addBtn}><Ionicons name="add" size={20} color={colors.primary} /></View>
-        </TouchableOpacity>
+        </PressableCard>
       );
     }
 
     // TARJETA DE RUTINA NORMAL
     return (
-      <TouchableOpacity style={s.activeCard} activeOpacity={0.8} onPress={() => router.push(`/rutina/${item.id}`)}>
+      <PressableCard style={s.activeCard} onPress={() => router.push(`/rutina/${item.id}`)}>
         <View style={s.dateCol}>
           <View style={s.activeDot} />
           <Text style={s.dateTextActive}>{DIAS_SHORT[item.dia_real_asignado]}</Text>
@@ -62,7 +63,7 @@ export default function RoutinesScreen() {
           </View>
         </View>
         <View style={s.playBtn}><Ionicons name="chevron-forward" size={20} color="#000" /></View>
-      </TouchableOpacity>
+      </PressableCard>
     );
   };
 
@@ -75,9 +76,9 @@ export default function RoutinesScreen() {
           <Text style={s.title}>Semana</Text>
           <Text style={s.subtitle}>Tu plan de 7 días</Text>
         </View>
-        <TouchableOpacity onPress={refetch} style={s.refreshBtn}>
+        <PressableCard style={s.refreshBtn} onPress={refetch}>
           <Ionicons name="refresh" size={22} color={colors.textSecondary} />
-        </TouchableOpacity>
+        </PressableCard>
       </View>
 
       {cargando ? (

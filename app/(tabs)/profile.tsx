@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, StatusBar, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, StatusBar, ActivityIndicator, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,14 +7,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { runExerciseSync } from '../../lib/syncExerciseDB';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
-import { useStreak } from '../../hooks/useStreak';
+import { useStreak } from '../../hooks/useStreak'; // 👈 Nuestro nuevo cerebro de racha
 import { supabase } from '../../lib/supabase';
+import PressableCard from '../../components/ui/PressableCard';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
-  const { streak, loading: loadingStreak } = useStreak();
+  
+  // 🚀 USAMOS LOS NUEVOS NOMBRES: rachaActual y mejorRacha
+  const { rachaActual, mejorRacha, loading: loadingStreak } = useStreak(); 
   
   const [isSyncing, setIsSyncing] = useState(false);
   
@@ -26,7 +29,10 @@ export default function ProfileScreen() {
     .substring(0, 2)
     .toUpperCase();
 
-  const handleLogout = async () => { router.replace('/(auth)/login'); };
+  const handleLogout = async () => { 
+    await supabase.auth.signOut();
+    router.replace('/(auth)/login'); 
+  };
 
   const handleDeleteAccount = () => {
     Alert.alert(
@@ -71,22 +77,21 @@ export default function ProfileScreen() {
           <Text style={s.userName}>{fullName}</Text>
           <Text style={s.userEmail}>{session?.user?.email}</Text>
           
-          <TouchableOpacity style={s.editBtn} onPress={() => router.push('/edit-profile')}>
+          <PressableCard style={s.editBtn} onPress={() => router.push('/edit-profile')}>
             <Text style={s.editBtnText}>Editar Perfil</Text>
-          </TouchableOpacity>
+          </PressableCard>
 
-          <TouchableOpacity onPress={handleSync} disabled={isSyncing} style={s.adminBtn}>
+          <PressableCard onPress={handleSync} disabled={isSyncing} style={s.adminBtn}>
             {isSyncing ? <ActivityIndicator color="#000" /> : <Text style={s.adminBtnText}>⚠️ ADMIN: Cargar Ejercicios</Text>}
-          </TouchableOpacity>
+          </PressableCard>
         </View>
 
-        {/* 🚀 NUEVA SECCIÓN: MIS LOGROS (Navegación a History y Stats) */}
+        {/* RENDIMIENTO */}
         <View style={s.logrosContainer}>
           <Text style={s.menuTitle}>MI RENDIMIENTO</Text>
           <View style={s.logrosGrid}>
-            <TouchableOpacity 
-              style={s.logroCard} 
-              activeOpacity={0.8}
+            <PressableCard
+              style={s.logroCard}
               onPress={() => router.push('/(tabs)/stats')}
             >
               <View style={[s.iconBox, { backgroundColor: 'rgba(255, 77, 0, 0.15)' }]}>
@@ -94,11 +99,10 @@ export default function ProfileScreen() {
               </View>
               <Text style={s.logroTitle}>Estadísticas</Text>
               <Text style={s.logroSub}>Volumen y Análisis</Text>
-            </TouchableOpacity>
+            </PressableCard>
 
-            <TouchableOpacity 
+            <PressableCard 
               style={s.logroCard} 
-              activeOpacity={0.8}
               onPress={() => router.push('/(tabs)/history')}
             >
               <View style={[s.iconBox, { backgroundColor: 'rgba(255, 215, 0, 0.15)' }]}>
@@ -106,21 +110,26 @@ export default function ProfileScreen() {
               </View>
               <Text style={s.logroTitle}>Historial</Text>
               <Text style={s.logroSub}>Sesiones pasadas</Text>
-            </TouchableOpacity>
+            </PressableCard>
           </View>
         </View>
 
-        {/* STATS ROW (Racha Real) */}
+        {/* STATS ROW ACTUALIZADO CON RACHA REAL */}
         <View style={s.statsRow}>
           <View style={s.statCard}>
-            <Ionicons name="flame" size={24} color={streak > 0 ? colors.primary : colors.textMuted} />
-            <Text style={[s.statValue, streak > 0 && { color: colors.primary }]}>{loadingStreak ? '...' : streak}</Text>
+            <Ionicons name="flame" size={24} color={rachaActual > 0 ? colors.primary : colors.textMuted} />
+            <Text style={[s.statValue, rachaActual > 0 && { color: colors.primary }]}>
+              {loadingStreak ? '...' : rachaActual}
+            </Text>
             <Text style={s.statLabel}>DÍAS SEGUIDOS</Text>
           </View>
+          
           <View style={s.statCard}>
-            <Ionicons name="star" size={24} color="#C0C0C0" />
-            <Text style={s.statValue}>Nvl 1</Text>
-            <Text style={s.statLabel}>RANGO</Text>
+            <Ionicons name="star" size={24} color="#FFD700" />
+            <Text style={s.statValue}>
+              {loadingStreak ? '...' : mejorRacha}
+            </Text>
+            <Text style={s.statLabel}>MEJOR RACHA</Text>
           </View>
         </View>
 
@@ -130,7 +139,6 @@ export default function ProfileScreen() {
           
           <MenuOption icon="notifications-outline" label="Recordatorios de entreno" onPress={() => {}} />
           
-          {/* 🛡️ OPCIONES DESHABILITADAS POR AHORA (UX Pro) */}
           <MenuOption 
             icon="shield-checkmark-outline" 
             label="Suscripción Premium" 
@@ -156,20 +164,19 @@ export default function ProfileScreen() {
   );
 }
 
-// Componente Interno Modificado para soportar 'disabled'
 function MenuOption({ icon, label, onPress, danger, rightElement, disabled }: any) {
   return (
-    <TouchableOpacity 
-      style={[s.option, disabled && { opacity: 0.5 }]} 
-      onPress={disabled ? undefined : onPress} 
-      activeOpacity={disabled ? 1 : 0.7}
+    <PressableCard 
+      style={s.option} 
+      onPress={onPress}
+      disabled={disabled}
     >
       <View style={s.optionLeft}>
         <Ionicons name={icon} size={22} color={danger ? colors.error : colors.textPrimary} />
         <Text style={[s.optionLabel, danger && { color: colors.error }]}>{label}</Text>
       </View>
       {rightElement || (!disabled && <Ionicons name="chevron-forward" size={20} color={colors.border} />)}
-    </TouchableOpacity>
+    </PressableCard>
   );
 }
 
@@ -184,27 +191,22 @@ const s = StyleSheet.create({
   editBtnText: { color: colors.textPrimary, fontSize: 13, fontWeight: '600' },
   adminBtn: { backgroundColor: '#FF4D00', padding: 15, borderRadius: 10, marginTop: 20, alignItems: 'center' },
   adminBtnText: { color: '#000', fontWeight: 'bold' },
-
-  // 🔥 NUEVOS ESTILOS PARA LOS BOTONES DE HISTORIAL Y STATS
   logrosContainer: { paddingHorizontal: spacing.lg, marginBottom: spacing.xl },
   logrosGrid: { flexDirection: 'row', gap: spacing.md },
   logroCard: { flex: 1, backgroundColor: colors.surface, padding: spacing.md, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, alignItems: 'center' },
   iconBox: { width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.sm },
   logroTitle: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 2 },
   logroSub: { fontSize: 11, color: colors.textSecondary },
-
   statsRow: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing.lg, marginBottom: spacing.xl },
   statCard: { flex: 1, backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
   statValue: { fontSize: 24, fontWeight: '900', color: colors.textPrimary, marginVertical: 4 },
   statLabel: { fontSize: 10, fontWeight: '900', color: colors.textMuted, letterSpacing: 1 },
-
   menuSection: { paddingHorizontal: spacing.lg },
   menuTitle: { fontSize: 11, fontWeight: '900', color: colors.textMuted, letterSpacing: 1.5, marginBottom: spacing.sm },
   option: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.border },
   optionLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   optionLabel: { fontSize: 16, color: colors.textPrimary, fontWeight: '500' },
   comingSoonText: { fontSize: 10, color: colors.textSecondary, fontStyle: 'italic', backgroundColor: colors.surfaceLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
-  
   dangerZone: { marginTop: 30, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 20 },
   dangerTitle: { fontSize: 11, fontWeight: '900', color: colors.error, letterSpacing: 1.5, marginBottom: spacing.sm },
 });
