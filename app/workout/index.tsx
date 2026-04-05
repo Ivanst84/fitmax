@@ -10,42 +10,30 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import PressableCard from '../../components/ui/PressableCard';
 
-// 🚀 IMPORTAMOS NUESTRO NUEVO COMPONENTE ÉPICO
+import PressableCard from '../../components/ui/PressableCard';
 import SessionReportCard from '../../components/ui/SessionReportCard';
+import GhostTracker from '../../components/ui/GhostTracker'; // 👈 APAGADO TEMPORALMENTE
 
 import { colors, spacing, radius, typography, buttons } from '../../constants/theme';
 import { useRoutineDetail } from '../../hooks/useRoutineDetail';
 import { useWorkoutSession } from '../../hooks/useWorkoutSession';
 import ExerciseGuideCard from '../../components/ui/ExerciseGuideCard';
-import { supabase } from '../../lib/supabase'; 
+import { supabase } from '../../lib/supabase';
 
-// ─── COMPONENTE: TIMER ISLAND ─────────────────
-type TimerHandle = {
-  getElapsedSeconds: () => number;
-};
-
+// (Los componentes TimerIsland y RestTimerIsland siguen exactamente igual aquí arriba)
+type TimerHandle = { getElapsedSeconds: () => number; };
 const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESIÓN ACTIVA' }, ref) => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startTimeRef = useRef(Date.now());
-
   useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000));
-    }, 1000);
-
+    const interval = setInterval(() => { setElapsedSeconds(Math.floor((Date.now() - startTimeRef.current) / 1000)); }, 1000);
     return () => clearInterval(interval);
   }, []);
-
-  useImperativeHandle(ref, () => ({
-    getElapsedSeconds: () => Math.floor((Date.now() - startTimeRef.current) / 1000),
-  }));
-
+  useImperativeHandle(ref, () => ({ getElapsedSeconds: () => Math.floor((Date.now() - startTimeRef.current) / 1000), }));
   const minutes = Math.floor(elapsedSeconds / 60);
   const seconds = elapsedSeconds % 60;
   const timeStr = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-
   return (
     <View style={s.timerBox}>
       <Text style={s.timerLabel}>{label}</Text>
@@ -54,47 +42,25 @@ const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESI
   );
 });
 
-// ─── COMPONENTE: REST TIMER ISLAND ─────────────────────
-const RestTimerIsland = ({ initialSeconds, onFinish, onSkip }: { 
-  initialSeconds: number, 
-  onFinish: () => void, 
-  onSkip: () => void 
-}) => {
+const RestTimerIsland = ({ initialSeconds, onFinish, onSkip }: { initialSeconds: number, onFinish: () => void, onSkip: () => void }) => {
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
-
   useEffect(() => {
-    if (secondsLeft <= 0) {
-      onFinish();
-      return;
-    }
-
+    if (secondsLeft <= 0) { onFinish(); return; }
     const interval = setInterval(() => {
-      setSecondsLeft(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          onFinish();
-          return 0;
-        }
-        return prev - 1;
-      });
+      setSecondsLeft(prev => { if (prev <= 1) { clearInterval(interval); onFinish(); return 0; } return prev - 1; });
     }, 1000);
-
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); 
-
   return (
     <View style={s.restCard}>
       <Text style={s.restTitle}>DESCANSO</Text>
       <Text style={s.restTimer}>{secondsLeft}s</Text>
-      <PressableCard style={s.skipBtn} onPress={onSkip}>
-        <Text style={s.skipText}>Saltar descanso</Text>
-      </PressableCard>
+      <PressableCard style={s.skipBtn} onPress={onSkip}><Text style={s.skipText}>Saltar descanso</Text></PressableCard>
     </View>
   );
 };
 
-// ─── PANTALLA PRINCIPAL: WORKOUT SESSION ─────────────────────────────────────
 export default function WorkoutSessionScreen() {
   const { rutinaId, nivelEnergia } = useLocalSearchParams<{ rutinaId: string, nivelEnergia?: string }>();
   const router = useRouter();
@@ -116,22 +82,26 @@ export default function WorkoutSessionScreen() {
 
   const [showTechGuide, setShowTechGuide] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
-  
-  // Guardamos el ID de la sesión recién terminada para pasárselo al reporte
   const [savedSessionId, setSavedSessionId] = useState<string | undefined>();
-  
   const [workoutStats, setWorkoutStats] = useState({ volume: 0, sets: 0, finalTimeStr: '0:00' });
   const [aiMessage, setAiMessage] = useState("Generando tu resumen épico...");
   const [cargandoIA, setCargandoIA] = useState(false);
 
+  // 🚀 ESTADO NUEVO: Rastrear qué set estamos haciendo
+  const [activeSetIndex, setActiveSetIndex] = useState(0);
+
   const timerRef = useRef<TimerHandle>(null);
   const viewShotRef = useRef<ViewShot>(null);
 
-  const formatTime = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
+  // 🚀 EFECTO NUEVO: Actualiza el activeSetIndex automáticamente
+  useEffect(() => {
+    if (!currentExercise) return;
+    const currentSetsInfo = setsData[currentExercise.id] || [];
+    const firstIncomplete = currentSetsInfo.findIndex((s: any) => !s.completed);
+    setActiveSetIndex(firstIncomplete === -1 ? currentSetsInfo.length - 1 : firstIncomplete);
+  }, [setsData, currentExercise]);
+
+  const formatTime = (sec: number) => { const m = Math.floor(sec / 60); const s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
   const handleRegresion = (regresionId: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -146,15 +116,12 @@ export default function WorkoutSessionScreen() {
       setCargandoIA(true);
       const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
       const prompt = `Actúa como un entrenador épico. Tu cliente terminó su rutina. Datos: Volumen: ${volumen} kg, Series: ${series}, Tiempo: ${tiempoStr}, Calorías: ${kcal} kcal. Genera un mensaje de victoria CORTO (2 líneas), explosivo. Cero markdown.`;
-      
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
       const data = await response.json();
       setAiMessage(data.candidates[0].content.parts[0].text.trim());
-    } catch (error) {
-      setAiMessage(`¡Eres una máquina! A descansar y crecer.`);
-    } finally { setCargandoIA(false); }
+    } catch (error) { setAiMessage(`¡Eres una máquina! A descansar y crecer.`); } finally { setCargandoIA(false); }
   };
 
   const handleFinish = () => {
@@ -162,10 +129,7 @@ export default function WorkoutSessionScreen() {
     ejerciciosActivos.forEach((ex: any) => { (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) setsCalculados++; }); });
 
     if (setsCalculados === 0) {
-      Alert.alert('Entrenamiento Vacío', 'No has completado ninguna serie.', [
-          { text: 'Seguir entrenando', style: 'cancel' },
-          { text: 'Descartar y Salir', onPress: () => router.back() },
-      ]);
+      Alert.alert('Entrenamiento Vacío', 'No has completado ninguna serie.', [{ text: 'Seguir entrenando', style: 'cancel' }, { text: 'Descartar y Salir', onPress: () => router.back() }]);
       return;
     }
 
@@ -177,27 +141,20 @@ export default function WorkoutSessionScreen() {
             try {
               const tiempoFinalSegundos = timerRef.current?.getElapsedSeconds() ?? 0;
               const tiempoFinalStr = formatTime(tiempoFinalSegundos);
-              
               let volCalculado = 0;
               ejerciciosActivos.forEach((ex: any) => { (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) volCalculado += (parseFloat(s.kg) || 0) * (parseInt(s.reps) || 0); }); });
-
               const minutosEntrenados = tiempoFinalSegundos / 60;
               const caloriasQuemadas = minutosEntrenados > 1 ? Math.round(minutosEntrenados * 5) : 0;
 
               setWorkoutStats({ volume: volCalculado, sets: setsCalculados, finalTimeStr: tiempoFinalStr });
-
-              // Guardar la sesión y capturar el ID
               const id = await finishAndSaveWorkout(rutinaId as string, rutina?.nombre || 'Rutina', tiempoFinalSegundos, volCalculado, setsCalculados, caloriasQuemadas);
-              
               if (id) {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setSavedSessionId(id); // 👈 Lo guardamos para el reporte
+                setSavedSessionId(id); 
                 setShowSummary(true); 
                 generarMensajeIA(volCalculado, setsCalculados, tiempoFinalStr, caloriasQuemadas);
               } else throw new Error("No se pudo guardar");
-            } catch (e) {
-              Alert.alert('Error', 'No se pudo guardar tu entrenamiento.');
-            }
+            } catch (e) { Alert.alert('Error', 'No se pudo guardar tu entrenamiento.'); }
           },
         },
       ]
@@ -209,27 +166,19 @@ export default function WorkoutSessionScreen() {
       if (viewShotRef.current && viewShotRef.current.capture) {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         const current = viewShotRef.current;
-        
         setTimeout(async () => {
           try {
             if (current.capture) {
               const uri = await current.capture();
               const isAvailable = await Sharing.isAvailableAsync();
               if (isAvailable && uri) {
-                await Sharing.shareAsync(uri, { 
-                  mimeType: 'image/png', 
-                  dialogTitle: '¡Mira mi entrenamiento en FitMax!' 
-                });
+                await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '¡Mira mi entrenamiento en FitMax!' });
               }
             }
-          } catch (e) {
-            console.error('Error al capturar imagen:', e);
-          }
+          } catch (e) { console.error('Error al capturar imagen:', e); }
         }, 300);
       }
-    } catch (error) { 
-      console.error('Error al compartir', error); 
-    }
+    } catch (error) { console.error('Error al compartir', error); }
   };
 
   if (cargando || !currentExercise) return <View style={s.center}><ActivityIndicator color={colors.primary} size="large" /></View>;
@@ -244,22 +193,18 @@ export default function WorkoutSessionScreen() {
     <KeyboardAvoidingView style={s.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <StatusBar barStyle="light-content" />
 
-      {/* HEADER ACTIVO */}
       {!showSummary && (
         <LinearGradient colors={['#111111', 'transparent']} style={[s.header, { paddingTop: insets.top + 8 }]}>
           <PressableCard style={s.closeBtn} onPress={() => router.back()} disabled={isSaving}>
             <Ionicons name="close" size={22} color="#fff" />
           </PressableCard>
-
           <TimerIsland ref={timerRef} label="SESIÓN ACTIVA" />
-
           <PressableCard style={s.finishBtn} onPress={handleFinish} disabled={isSaving}>
             <Text style={s.finishBtnText}>FIN</Text>
           </PressableCard>
         </LinearGradient>
       )}
 
-      {/* ÁREA DE ENTRENAMIENTO */}
       {!showSummary && (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.scroll, { paddingBottom: insets.bottom + 100 }]}>
           <View style={s.progressRow}>
@@ -299,6 +244,15 @@ export default function WorkoutSessionScreen() {
               <Text style={[s.trackerCol, { flex: 0.8 }]}>{esPorTiempo ? 'SEGUNDOS' : 'REPS'}</Text>
               <Text style={[s.trackerCol, { flex: 0.5, textAlign: 'center' }]}>✓</Text>
             </View>
+
+            <GhostTracker
+              key={currentExercise.ejercicio_id}
+              currentKg={currentSets[activeSetIndex]?.kg?.toString() ?? '0'}
+              currentReps={currentSets[activeSetIndex]?.reps?.toString() ?? currentExercise.repeticiones}
+              ghostSets={previousSets[currentExercise.ejercicio_id] ?? []}
+              setIndex={activeSetIndex}
+              isCompleted={currentSets[activeSetIndex]?.completed ?? false}
+            /> 
 
             {currentSets.map((set: any, index: number) => {
               const prevSet = previousSets[currentExercise.ejercicio_id]?.[index];
@@ -341,11 +295,7 @@ export default function WorkoutSessionScreen() {
           </View>
 
           {isResting ? (
-            <RestTimerIsland 
-              initialSeconds={restSeconds} 
-              onFinish={skipRest} 
-              onSkip={skipRest} 
-            />
+            <RestTimerIsland initialSeconds={restSeconds} onFinish={skipRest} onSkip={skipRest} />
           ) : allSetsDone ? (
             <View style={s.nextCard}>
               <PressableCard style={buttons.primary} onPress={() => {
@@ -365,7 +315,6 @@ export default function WorkoutSessionScreen() {
         </ScrollView>
       )}
 
-      {/* GUIA TÉCNICA MODAL */}
       <Modal visible={showTechGuide} animationType="slide" transparent={true}>
         <View style={s.modalOverlay}>
           <View style={[s.modalContent, { paddingBottom: insets.bottom + 20 }]}>
@@ -381,36 +330,23 @@ export default function WorkoutSessionScreen() {
         </View>
       </Modal>
 
-      {/* 🚀 RESUMEN FINAL (CON LA TARJETA DE REPORTE Y LA TARJETA DE INSTAGRAM) */}
       {showSummary && (
-        <ScrollView 
-          style={[StyleSheet.absoluteFillObject, { backgroundColor: '#000', zIndex: 50 }]}
-          contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: insets.top + spacing.xl, paddingBottom: 100 }}
-          showsVerticalScrollIndicator={false}
-        >
+        <ScrollView style={[StyleSheet.absoluteFillObject, { backgroundColor: '#000', zIndex: 50 }]} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: insets.top + spacing.xl, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
           <Text style={s.summaryMainTitle}>¡MISIÓN CUMPLIDA!</Text>
 
-          {/* 1. EL REPORTE TÉCNICO (El código de Claude) */}
-          <SessionReportCard 
-            sesionId={savedSessionId} 
-            rutinaId={rutinaId as string} 
-            nombreRutina={rutina?.nombre}
-          />
+          <SessionReportCard sesionId={savedSessionId} rutinaId={rutinaId as string} nombreRutina={rutina?.nombre} />
 
           <View style={{ height: spacing.xl }} />
 
-          {/* 2. LA TARJETA DE INSTAGRAM (La tuya, ya con mensaje AI) */}
           <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1.0 }} style={s.shareCardContainer}>
             <LinearGradient colors={['#1a1a1c', '#000000']} style={s.shareCard}>
               <View style={s.shareHeader}>
                 <Ionicons name="flame" size={28} color={colors.primary} /><Text style={s.shareBrand}>FitMax App</Text>
               </View>
               <Text style={s.shareRoutineName}>{rutina?.nombre || 'Rutina'}</Text>
-              
               <View style={s.aiMessageBox}>
                 {cargandoIA ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={s.aiMessageText}>{aiMessage}</Text>}
               </View>
-
               <View style={s.shareMetrics}>
                 <View style={s.shareMetricBox}><Text style={s.shareMetricValue}>{workoutStats.finalTimeStr}</Text><Text style={s.shareMetricLabel}>TIEMPO</Text></View>
                 <View style={s.shareMetricDiv} />
@@ -494,8 +430,6 @@ const s = StyleSheet.create({
   modalTitle: { ...typography.h2, textTransform: 'uppercase', marginBottom: 20, textAlign: 'center' },
   savingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   savingText: { ...typography.caption, color: colors.primary, marginTop: 16 },
-  
-  // 🔥 ESTILOS DEL SUMMARY ÉPICO
   summaryMainTitle: { ...typography.h1, marginBottom: 20, textAlign: 'center' },
   shareCardContainer: { width: '100%', borderRadius: radius.lg, overflow: 'hidden' },
   shareCard: { padding: 30, alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderRadius: radius.lg },

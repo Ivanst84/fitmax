@@ -112,7 +112,7 @@ export default function RoutineDetailScreen() {
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
         <PressableCard 
           style={[buttons.primary, { flexDirection: 'row' }]} 
-          onPress={() => router.push({ pathname: "/workout/session", params: { rutinaId: id, nivelEnergia: energia } })}
+          onPress={() => router.push({ pathname: "/workout", params: { rutinaId: id, nivelEnergia: energia } })}
           glowColor={colors.primary} // 👈 ¡EFECTO GLOW PARA EL BOTÓN PRINCIPAL!
           haptic="heavy" // 👈 UN CLIC MÁS FUERTE PARA EL COMIENZO
         >

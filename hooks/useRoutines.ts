@@ -38,101 +38,120 @@ export function useRoutines() {
       lunes.setDate(hoyFecha.getDate() - diaSemanaAct + 1);
       lunes.setHours(0, 0, 0, 0);
 
-      // ======================================================================
-      // 🚀 LLAMADA A LA SÚPER FUNCIÓN (RPC)
-      // ======================================================================
+      // B. Llamada al RPC de Supabase
       const { data: homeData, error: rpcError } = await supabase.rpc('get_home_data', {
         p_week_start: lunes.toISOString()
       });
 
       if (rpcError) throw rpcError;
 
-      // Extraemos los datos del "Combo" de Claude
       const perfil = homeData.perfil;
       const todasLasRutinas = homeData.rutinas || [];
       const completadasSemana = homeData.rutinas_completadas_semana || [];
 
-      // 1. Configuración del perfil
-      const nivelId = perfil?.nivel || 1;
-      const objetivoId = perfil?.objetivo || 1;
       const diasElegidos: number[] = perfil?.dias_entrenamiento || [1, 2, 3, 4, 5];
-      diasElegidos.sort((a, b) => a - b);
-
-      // 2. Clasificar rutinas (Sistema vs Propias)
-      const rutinasSistema = todasLasRutinas.filter((r: any) => 
-        r.user_id === null && r.nivel_id === nivelId && r.objetivo_id === objetivoId
-      );
-      const rutinasPropias = todasLasRutinas.filter((r: any) => 
-        r.user_id !== null
-      ).sort((a: any, b: any) => (a.dia_semana || 0) - (b.dia_semana || 0));
-
-      const poolRutinas = rutinasPropias.length > 0 ? rutinasPropias : rutinasSistema;
+      
+      // Ordenamos el pool para tener consistencia
+      const poolRutinas = [...todasLasRutinas];
 
       // ======================================================================
-      // 📅 CONSTRUIR EL CALENDARIO DE LA SEMANA
+      // 📅 CONSTRUIR EL CALENDARIO DE LA SEMANA (7 DÍAS)
       // ======================================================================
       const semanaGenerada: RutinaSemana[] = [];
-      let indexPool = 0;
+      let nextFillIndex = 0;
 
       for (let dia = 1; dia <= 7; dia++) {
-        const esDiaEntrenamiento = diasElegidos.includes(dia);
+        // 1. PRIORIDAD MÁXIMA: ¿Hay una rutina asignada específicamente a este día (1-7)?
+        const rutinaAsignada = poolRutinas.find(r => r.dia_semana === dia);
 
-        if (!esDiaEntrenamiento) {
+        if (rutinaAsignada) {
           semanaGenerada.push({
-            id: `rest-${dia}`, nombre: 'Día de Descanso', dia_real_asignado: dia,
-            isRest: true, isEmpty: false, isCustom: false
+            ...rutinaAsignada,
+            dia_real_asignado: dia,
+            isRest: false,
+            isEmpty: false,
+            isCustom: rutinaAsignada.user_id !== null
           });
           continue;
         }
 
-        if (poolRutinas.length > 0) {
-          const rutina = poolRutinas[indexPool % poolRutinas.length];
+        // 2. Si no hay rutina fija, miramos si es día de descanso en el perfil
+        const esDiaEntrenamiento = diasElegidos.includes(dia);
+
+        if (!esDiaEntrenamiento) {
           semanaGenerada.push({
-            ...rutina, dia_real_asignado: dia, isRest: false, isEmpty: false, isCustom: rutinasPropias.length > 0
+            id: `rest-${dia}`, 
+            nombre: 'Día de Descanso', 
+            dia_real_asignado: dia,
+            isRest: true, 
+            isEmpty: false, 
+            isCustom: false
           });
-          indexPool++;
-        } else {
+          continue;
+        }
+
+        // 3. Es día de entrenamiento pero no hay rutina fija: Rellenamos con el pool
+        // Filtramos las que NO tienen día fijo para usarlas de relleno
+        const poolRelleno = poolRutinas.filter(r => !r.dia_semana || r.dia_semana === 0);
+        const fuenteRelleno = poolRelleno.length > 0 ? poolRelleno : poolRutinas;
+
+        if (fuenteRelleno.length > 0) {
+          const rutinaRelleno = fuenteRelleno[nextFillIndex % fuenteRelleno.length];
           semanaGenerada.push({
-            id: `empty-${dia}`, nombre: 'Entrenamiento Libre', dia_real_asignado: dia,
-            isRest: false, isEmpty: true, isCustom: false
+            ...rutinaRelleno,
+            dia_real_asignado: dia,
+            isRest: false,
+            isEmpty: false,
+            isCustom: rutinaRelleno.user_id !== null
+          });
+          nextFillIndex++;
+        } else {
+          // Si de plano no hay nada en la base de datos
+          semanaGenerada.push({
+            id: `empty-${dia}`, 
+            nombre: 'Día Libre', 
+            dia_real_asignado: dia,
+            isRest: false, 
+            isEmpty: true, 
+            isCustom: false
           });
         }
       }
+      
       setRutinas(semanaGenerada);
 
       // ======================================================================
       // 🎯 ASIGNAR EL ENTRENAMIENTO DE HOY
       // ======================================================================
-      const esHoyEntrenamiento = diasElegidos.includes(diaHoyISO);
-
-      if (!esHoyEntrenamiento) {
-        setRutinaHoy(semanaGenerada.find(r => r.dia_real_asignado === diaHoyISO) || null);
+      const rutinaAsignadaHoy = semanaGenerada.find(r => r.dia_real_asignado === diaHoyISO);
+      
+      if (rutinaAsignadaHoy && !rutinaAsignadaHoy.isRest && !rutinaAsignadaHoy.isEmpty) {
+        // Si hoy hay una rutina (ya sea fija o de relleno), es la de hoy
+        setRutinaHoy(rutinaAsignadaHoy);
       } else {
-        if (poolRutinas.length > 0) {
-          // Buscamos la primera que no esté en la lista de completadas traída por el RPC
-          const siguientePendiente = poolRutinas.find((r: any) => !completadasSemana.includes(r.id)) || poolRutinas[0];
-
-          setRutinaHoy({
-            ...siguientePendiente,
-            dia_real_asignado: diaHoyISO,
-            isRest: false,
-            isEmpty: false,
-            isCustom: rutinasPropias.length > 0
-          });
-        } else {
-          setRutinaHoy(semanaGenerada.find(r => r.dia_real_asignado === diaHoyISO) || null);
-        }
+        // Si hoy es descanso pero hay rutinas pendientes en la semana, 
+        // podríamos sugerir la siguiente (opcional), pero por ahora respetamos el calendario
+        setRutinaHoy(rutinaAsignadaHoy || null);
       }
 
-    } catch (err) {
-      console.error("❌ Error en useRoutines:", err);
-      setError('Error al cargar la semana.');
+    } catch (err: any) {
+      console.error("❌ Error en useRoutines:", err.message);
+      setError('Error al cargar la planificación semanal.');
     } finally {
       setCargando(false);
     }
   }, [diaHoyISO]);
 
-  useEffect(() => { fetchRutinas(); }, [fetchRutinas]);
+  useEffect(() => { 
+    fetchRutinas(); 
+  }, [fetchRutinas]);
 
-  return { rutinas, rutinaHoy, nombreHoy, cargando, error, refetch: fetchRutinas };
+  return { 
+    rutinas, 
+    rutinaHoy, 
+    nombreHoy, 
+    cargando, 
+    error, 
+    refetch: fetchRutinas 
+  };
 }
