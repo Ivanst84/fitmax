@@ -1,8 +1,6 @@
 import { useState } from 'react';
 
-// ============================================================================
-// 🛡️ RESCATE DE JSON INDESTRUCTIBLE
-// ============================================================================
+
 const intentarRecuperarJSON = (texto: string | undefined | null) => {
   if (!texto) {
     console.error("⚠️ Gemini no devolvió texto.");
@@ -140,9 +138,24 @@ export const useGeminiRoutine = () => {
         }
 
         const data = await response.json();
+// ======================================================================
+        // 🚀 EL RADAR DE TOKENS (AQUÍ LO PONES)
+        // ======================================================================
+        if (data.usageMetadata) {
+          console.log("📊 REPORTE DE TOKENS (COSTO DE ESTE USUARIO):", {
+            enviados: data.usageMetadata.promptTokenCount,
+            recibidos: data.usageMetadata.candidatesTokenCount,
+            total: data.usageMetadata.totalTokenCount
+          });
+        } else {
+          console.log("📊 REPORTE DE TOKENS: No disponible en esta respuesta.");
+        }
+        // ======================================================================
+
         const textoCrudo = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        console.log("💬 Respuesta cruda de Gemini:", textoCrudo);
+        const resJSON = intentarRecuperarJSON(textoCrudo);        
         
-        const resJSON = intentarRecuperarJSON(textoCrudo);
         const diasRaw = Array.isArray(resJSON) ? resJSON : (resJSON.plan || resJSON.rutina || []);
 
         return diasRaw.map((dia: any, index: number) => ({

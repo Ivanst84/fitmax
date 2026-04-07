@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, StatusBar, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, ActivityIndicator, ScrollView, Alert, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useFocusEffect } from 'expo-router'; // 👈 Asegúrate que sea expo-router
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import StreakWidget from '../../components/ui/StreakWidget';
@@ -18,13 +18,15 @@ export default function HomeScreen() {
   
   const { session } = useAuth();
   const { rutinaHoy, cargando, refetch } = useRoutines();
-  const { data: coachData, loading: loadingCoach } = usePeriodization(); // 🧠 Hook del Coach
+  const { data: coachData, loading: loadingCoach, refetch: refetchCoach } = usePeriodization(); 
 
   const [volumenSemanal, setVolumenSemanal] = useState(0);
   const [sesionesSemana, setSesionesSemana] = useState(0);
   const [metaSesiones, setMetaSesiones] = useState(3);
+  
+  // 🔥 Estado para el botón de evolución
+  const [evolucionando, setEvolucionando] = useState(false);
 
-  // DEBUG: Para ver en la terminal qué dice el coach
   useEffect(() => {
     if (coachData) {
       console.log("🧠 COACH DATA:", coachData.mensaje_coach);
@@ -59,13 +61,93 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchEstadisticas();
-      refetch(); // Refrescamos rutinas al entrar
+      refetch(); 
+      refetchCoach(); 
     }, [session?.user?.id])
   );
 
   const getInitials = () => {
     const fullName = session?.user?.user_metadata?.full_name || session?.user?.email || 'U';
     return fullName.substring(0, 2).toUpperCase();
+  };
+
+  // ============================================================================
+  // 🧠 LÓGICA DE EVOLUCIÓN (14 DÍAS) - BLINDADA Y CON LOGS
+  // ============================================================================
+  const handleRegenerarRutina = async () => {
+    try {
+      setEvolucionando(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuario no autenticado");
+
+      // 1. Traemos las rutinas y ejercicios ACTUALES
+      const { data: rutinas, error: errRutinas } = await supabase
+        .from('RUTINAS')
+        .select('*, RUTINA_EJERCICIOS(*)')
+        .eq('user_id', user.id);
+
+      if (errRutinas || !rutinas) throw new Error("No se encontraron rutinas para evolucionar.");
+
+      // 2. Iteramos sobre cada rutina
+      for (const rutina of rutinas) {
+        
+        // A) Actualizamos el Título a Fase 2
+        let nuevoNombre = rutina.nombre;
+        if (!nuevoNombre.includes('(Fase 2)')) {
+          nuevoNombre = `${nuevoNombre} (Fase 2)`;
+        }
+
+        const { error: errUpdateRutina } = await supabase.from('RUTINAS')
+          .update({ nombre: nuevoNombre, nivel_id: 2 })
+          .eq('id', rutina.id);
+        
+        if (errUpdateRutina) console.error("❌ Error actualizando rutina:", errUpdateRutina.message);
+
+        // B) Actualizamos cada ejercicio
+        for (const ej of rutina.RUTINA_EJERCICIOS) {
+          // Si es calentamiento, lo ignoramos
+          if (ej.es_calentamiento === true || ej.es_calentamiento === 'true') continue; 
+
+          let nuevasSeries = parseInt(ej.series);
+          let nuevosDescansos = parseInt(ej.descanso_seg);
+          const objId = parseInt(rutina.objetivo_id); // Aseguramos que sea número
+
+          // 🧬 LÓGICA DE SOBRECARGA
+          if (objId === 1 || objId === 3) { 
+            nuevosDescansos = Math.max(30, nuevosDescansos - 15); 
+          } else if (objId === 2) { 
+            nuevasSeries = nuevasSeries + 1;
+          } else if (objId === 5) { 
+            nuevosDescansos = nuevosDescansos + 30; 
+          }
+
+          console.log(`🏋️ Actualizando EJ_ID: ${ej.id} | Series: ${ej.series} -> ${nuevasSeries} | Descanso: ${ej.descanso_seg} -> ${nuevosDescansos}`);
+
+          // Hacemos el Update explícito
+          const { error: errUpdateEj } = await supabase.from('RUTINA_EJERCICIOS')
+            .update({ series: nuevasSeries, descanso_seg: nuevosDescansos })
+            .eq('id', ej.id);
+
+          if (errUpdateEj) console.error(`❌ Error actualizando EJ ${ej.id}:`, errUpdateEj.message);
+        }
+      }
+
+      // 3. 🧹 LIMPIEZA DEL PLATEAU (Para que desaparezca el botón)
+      // OPCIÓN B: Actualizamos la fecha de registro en el usuario temporalmente para "engañar" al cálculo
+      await supabase.from('USUARIOS').update({ fecha_registro: new Date().toISOString() }).eq('id', user.id);
+
+      Alert.alert("¡Nivel Superado! 🦍🔥", "Tus rutinas han evolucionado. ¡A darle con todo!");
+      
+      // Refrescamos la UI
+      refetch();
+      refetchCoach();
+
+    } catch (e: any) {
+      console.error("❌ ERROR FATAL EVOLUCIÓN:", e);
+      Alert.alert("Error de Evolución", "No pudimos actualizar tu fase.");
+    } finally {
+      setEvolucionando(false);
+    }
   };
 
   const renderPlanDeHoy = () => {
@@ -119,7 +201,7 @@ export default function HomeScreen() {
         
         <StreakWidget />
 
-        {/* 🧠 BANNER DEL COACH (Fuera de funciones, siempre visible) */}
+        {/* 🧠 BANNER DEL COACH */}
         {!loadingCoach && coachData && (
           <PressableCard 
             style={{
@@ -152,6 +234,25 @@ export default function HomeScreen() {
                 </Text>
               </View>
             </View>
+
+            {/* 🔥 BOTÓN PARA PRUEBAS (En producción cambiar a coachData.plateau_detectado) */}
+            {coachData.plateau_detectado && (
+              <TouchableOpacity 
+                style={styles.evolveBtn}
+                onPress={handleRegenerarRutina}
+                disabled={evolucionando}
+              >
+                {evolucionando ? (
+                  <ActivityIndicator color="#000" size="small" />
+                ) : (
+                  <>
+                    <Text style={styles.evolveBtnText}>Evolucionar Mi Rutina</Text>
+                    <Ionicons name="trending-up" size={16} color="#000" />
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+
           </PressableCard>
         )}
 
@@ -208,4 +309,8 @@ const styles = StyleSheet.create({
   cardMetaText: { ...typography.small, marginLeft: 4 },
   playButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
   loaderContainer: { height: 120, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
+  
+  // 🔥 ESTILOS PARA EL BOTÓN DE EVOLUCIÓN
+  evolveBtn: { backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 12, borderRadius: radius.md, marginTop: 15, gap: 8 },
+  evolveBtnText: { color: '#000', fontWeight: 'bold', fontSize: 14 }
 });

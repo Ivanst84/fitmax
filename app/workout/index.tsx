@@ -124,7 +124,7 @@ export default function WorkoutSessionScreen() {
     } catch (error) { setAiMessage(`¡Eres una máquina! A descansar y crecer.`); } finally { setCargandoIA(false); }
   };
 
-  const handleFinish = () => {
+const handleFinish = () => {
     let setsCalculados = 0;
     ejerciciosActivos.forEach((ex: any) => { (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) setsCalculados++; }); });
 
@@ -142,25 +142,59 @@ export default function WorkoutSessionScreen() {
               const tiempoFinalSegundos = timerRef.current?.getElapsedSeconds() ?? 0;
               const tiempoFinalStr = formatTime(tiempoFinalSegundos);
               let volCalculado = 0;
-              ejerciciosActivos.forEach((ex: any) => { (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) volCalculado += (parseFloat(s.kg) || 0) * (parseInt(s.reps) || 0); }); });
-              const minutosEntrenados = tiempoFinalSegundos / 60;
-              const caloriasQuemadas = minutosEntrenados > 1 ? Math.round(minutosEntrenados * 5) : 0;
+              let repsTotales = 0; // 👈 NUEVA VARIABLE
+              ejerciciosActivos.forEach((ex: any) => { 
+                (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) { volCalculado += (parseFloat(s.kg) || 0) * (parseInt(s.reps) || 0); repsTotales += parseInt(s.reps) || 0; } }); });
+
+              // 🧠 ------------------------------------------------------------
+              // INICIO DE LA MAGIA FITMAX: CÁLCULO CIENTÍFICO
+              // ---------------------------------------------------------------
+              let caloriasReales = 10; // Base de respaldo
+              const { data: { user } } = await supabase.auth.getUser();
+              
+
+              if (user) {
+                const { data: kcalData, error: kcalError } = await supabase.rpc('calcular_calorias_sesion', {
+                  p_user_id: user.id,
+                  p_duracion_seg: tiempoFinalSegundos,
+                  p_volumen_total: volCalculado,
+                  p_total_reps: repsTotales 
+                  
+                });
+
+                if (!kcalError && kcalData) {
+                  caloriasReales = kcalData;
+                } else {
+                  console.warn("Fallo el cálculo exacto, usando respaldo lineal.");
+                  const minutos = tiempoFinalSegundos / 60;
+                  caloriasReales = minutos > 1 ? Math.round(minutos * 5) : 10;
+                }
+              }
+              // ---------------------------------------------------------------
+              // FIN DE LA MAGIA
+              // ---------------------------------------------------------------
 
               setWorkoutStats({ volume: volCalculado, sets: setsCalculados, finalTimeStr: tiempoFinalStr });
-              const id = await finishAndSaveWorkout(rutinaId as string, rutina?.nombre || 'Rutina', tiempoFinalSegundos, volCalculado, setsCalculados, caloriasQuemadas);
+              
+              // 🚀 Pasamos caloriasReales a tu función de guardado
+              const id = await finishAndSaveWorkout(rutinaId as string, rutina?.nombre || 'Rutina', tiempoFinalSegundos, volCalculado, setsCalculados, caloriasReales);
+              
               if (id) {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 setSavedSessionId(id); 
                 setShowSummary(true); 
-                generarMensajeIA(volCalculado, setsCalculados, tiempoFinalStr, caloriasQuemadas);
+                // 🚀 Y también se lo pasamos a la IA para que te felicite
+                generarMensajeIA(volCalculado, setsCalculados, tiempoFinalStr, caloriasReales);
               } else throw new Error("No se pudo guardar");
-            } catch (e) { Alert.alert('Error', 'No se pudo guardar tu entrenamiento.'); }
+            } catch (e) { 
+              console.error("Error al finalizar:", e);
+              Alert.alert('Error', 'No se pudo guardar tu entrenamiento.'); 
+            }
           },
         },
       ]
     );
   };
-
   const shareWorkout = async () => {
     try {
       if (viewShotRef.current && viewShotRef.current.capture) {
