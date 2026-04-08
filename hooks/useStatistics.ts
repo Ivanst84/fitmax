@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
@@ -14,6 +14,14 @@ interface Stats {
   totalKgs: number;
 }
 
+// 🛡️ Extrae la fecha local exacta
+const formatearFechaLocal = (fecha: Date) => {
+  const year = fecha.getFullYear();
+  const month = String(fecha.getMonth() + 1).padStart(2, '0');
+  const day = String(fecha.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export function useStatistics() {
   const { session } = useAuth();
   const [stats, setStats] = useState<Stats>({
@@ -23,32 +31,12 @@ export function useStatistics() {
   });
   const [loading, setLoading] = useState(true);
 
-  // Mantenemos tu variable de modo desarrollador por si la ocupas en el futuro
   const DEV_MODE = false;
 
   const fetchStats = async () => {
     try {
       setLoading(true);
-
       if (!session?.user?.id) return;
-
-      if (DEV_MODE) {
-        setTimeout(() => {
-          setStats({
-            volumenSemanal: [
-              { fecha: 'Sem 1', valor: 12500 },
-              { fecha: 'Sem 2', valor: 14200 },
-              { fecha: 'Sem 3', valor: 13800 },
-              { fecha: 'Sem 4', valor: 16500 },
-              { fecha: 'Esta Sem', valor: 18200 },
-            ],
-            progreso1RM: [],
-            totalKgs: 75200 
-          });
-          setLoading(false);
-        }, 500);  
-        return;
-      }
 
       // 1. Total Acumulado Histórico
       const { data: historialGlobal } = await supabase
@@ -59,51 +47,65 @@ export function useStatistics() {
       const totalAcumulado = historialGlobal?.reduce((sum, item) => sum + (item.volumen_total_kg || 0), 0) || 0;
 
       // 2. Últimos 7 Días
+   // 2. Últimos 7 Días
       const haceUnaSemana = new Date();
       haceUnaSemana.setDate(haceUnaSemana.getDate() - 6);
       haceUnaSemana.setHours(0, 0, 0, 0);
 
-      const { data: historialSemana } = await supabase
+      // 🛡️ FIX: Cambiamos 'created_at' por 'fecha' en las 3 líneas
+      const { data: historialSemana, error: errorSemana } = await supabase
         .from('HISTORIAL_SESIONES')
-        .select('created_at, volumen_total_kg') // Cambiado de 'fecha' a 'created_at' según tu base de datos actual
+        .select('fecha, volumen_total_kg') 
         .eq('user_id', session.user.id)
-        .gte('created_at', haceUnaSemana.toISOString())
-        .order('created_at', { ascending: true });
+        .gte('fecha', haceUnaSemana.toISOString())
+        .order('fecha', { ascending: true });
 
-      // 3. Estructurar para la Gráfica
+      if (errorSemana) {
+        console.log("🚨 ERROR DE SUPABASE:", errorSemana.message);
+      }
+      console.log("📊 Sesiones de los últimos 7 días:", historialSemana);
+
+      // 3. Estructurar para la Gráfica (Garantizando orden cronológico)
       const diasAbreviados = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-      const volumenPorDia: Record<string, { etiqueta: string, volumen: number }> = {};
+      const arregloGrafica: DiaVolumen[] = [];
+      const mapaVolumen: Record<string, number> = {};
 
       for (let i = 0; i <= 6; i++) {
-        const fechaIteracion = new Date(haceUnaSemana);
-        fechaIteracion.setDate(fechaIteracion.getDate() + i);
-        const fechaString = fechaIteracion.toISOString().split('T')[0]; 
-        const nombreDia = diasAbreviados[fechaIteracion.getDay()]; 
+        const d = new Date(haceUnaSemana);
+        d.setDate(d.getDate() + i);
+        const fechaStr = formatearFechaLocal(d);
+        const nombreDia = diasAbreviados[d.getDay()];
         
-        volumenPorDia[fechaString] = {
-            etiqueta: nombreDia,
-            volumen: 0
-        };
+        mapaVolumen[fechaStr] = 0;
+        arregloGrafica.push({ fecha: nombreDia, valor: 0, ...{_fechaStr: fechaStr} }); 
       }
 
       if (historialSemana) {
         historialSemana.forEach(sesion => {
-          // Tu DB usa created_at, si usaba fecha cambialo aquí
-          const fechaSesion = new Date(sesion.created_at).toISOString().split('T')[0];
-          if (volumenPorDia[fechaSesion]) {
-            volumenPorDia[fechaSesion].volumen += (sesion.volumen_total_kg || 0);
+          // 🛡️ FIX: Ahora leemos 'sesion.fecha' directamente
+          const dateVal = sesion.fecha; 
+          if (!dateVal) return;
+          
+          const fechaLimpia = dateVal.length === 10 ? `${dateVal}T12:00:00Z` : dateVal;
+          const fechaSesionObj = new Date(fechaLimpia);
+          const fStr = formatearFechaLocal(fechaSesionObj);
+          
+          if (mapaVolumen[fStr] !== undefined) {
+            mapaVolumen[fStr] += (sesion.volumen_total_kg || 0);
           }
         });
       }
-
-      const arregloGrafica: DiaVolumen[] = Object.values(volumenPorDia).map(dia => ({
-        fecha: dia.etiqueta,
-        valor: dia.volumen
+      // Asignar los valores calculados al arreglo final
+      const graficaFinal = arregloGrafica.map(item => ({
+        fecha: item.fecha,
+        valor: mapaVolumen[(item as any)._fechaStr]
       }));
 
+      console.log("📈 Gráfica final a dibujar:", graficaFinal);
+
       setStats({
-        volumenSemanal: arregloGrafica,
-        progreso1RM: [], // Lo dejamos vacío para futuras implementaciones
+        volumenSemanal: graficaFinal,
+        progreso1RM: [], 
         totalKgs: totalAcumulado
       });
 

@@ -1,6 +1,5 @@
 import { useState } from 'react';
 
-
 const intentarRecuperarJSON = (texto: string | undefined | null) => {
   if (!texto) {
     console.error("⚠️ Gemini no devolvió texto.");
@@ -27,7 +26,7 @@ const intentarRecuperarJSON = (texto: string | undefined | null) => {
 };
 
 // ============================================================================
-// 🧠 HOOK DE GENERACIÓN CIENTÍFICA
+// 🧠 HOOK DE GENERACIÓN CIENTÍFICA (VERSIÓN LITE + CÁLCULO DINÁMICO)
 // ============================================================================
 export const useGeminiRoutine = () => {
   const [loading, setLoading] = useState(false);
@@ -48,13 +47,37 @@ export const useGeminiRoutine = () => {
     const ejecutarConReintentos = async (): Promise<any> => {
       try {
         // ======================================================================
-        // 🛡️ 1. PRE-FILTRO INTELIGENTE (Tu lógica intacta)
+        // 🛡️ 1. PRE-FILTRO INTELIGENTE DE NIVEL
         // ======================================================================
-        let nivelUsuarioNum = 2;
+        let nivelUsuarioNum = 2; // Default Intermedio
         const nivelStr = String(respuestas.nivel).toLowerCase();
         if (nivelStr.includes('principiante') || respuestas.nivel === 1) nivelUsuarioNum = 1;
         if (nivelStr.includes('avanzado') || respuestas.nivel === 3) nivelUsuarioNum = 3;
 
+        // ======================================================================
+        // 🧬 2. CÁLCULO DINÁMICO DE VOLUMEN (Basado en Fisiología y Catálogo)
+        // ======================================================================
+        let numEjercicios = 6; // Base estándar
+
+        // A) Ajuste por Tiempo (Asumiendo que trae minutos: 30, 45, 60...)
+        const duracion = parseInt(respuestas.duracion) || 60;
+        if (duracion <= 30) numEjercicios = 4;
+        else if (duracion >= 90) numEjercicios = 8;
+        else numEjercicios = 6; 
+
+        // B) Ajuste Fisiológico por Objetivo (Tus IDs exactos)
+        const objId = parseInt(respuestas.objetivo);
+        if (objId === 5) {
+          // ID 5 = Fuerza: Menos ejercicios, pesados, más descanso
+          numEjercicios = Math.max(3, numEjercicios - 2); 
+        } else if (objId === 1 || objId === 3) {
+          // ID 1 (Perder peso) o 3 (Tonificar): Circuitos más densos, más ejercicios
+          numEjercicios = numEjercicios + 1; 
+        }
+
+        // ======================================================================
+        // 🛡️ 3. FILTRADO DEL CATÁLOGO
+        // ======================================================================
         let catalogoFiltrado = catalogoEjercicios.filter(ej => {
           const nivelEj = ej.nivel_id || 1;
           return nivelEj <= nivelUsuarioNum;
@@ -64,11 +87,7 @@ export const useGeminiRoutine = () => {
           catalogoFiltrado = catalogoFiltrado.sort(() => 0.5 - Math.random()).slice(0, 70);
         }
 
-        // ======================================================================
-        // 🗺️ 2. MAPEO Y CREACIÓN DEL PROMPT (Tu mapeo intacto)
-        // ======================================================================
         const mapaReferencia: Record<number, string> = {};
-        
         const catalogoSimplificado = catalogoFiltrado.map((ej, index) => {
           const idCorto = index + 1;
           mapaReferencia[idCorto] = ej.id;
@@ -76,25 +95,25 @@ export const useGeminiRoutine = () => {
           return `#${idCorto}: ${ej.nombre}${infoExtra}`;
         }).join('\n');
 
-        // 🔥 INSTRUCCIÓN CORREGIDA (Para forzar nombres creativos y descripciones)
+        // ======================================================================
+        // 🗺️ 4. CREACIÓN DEL PROMPT (Inyectando numEjercicios)
+        // ======================================================================
         const systemInstruction = `
-          Eres un Coach Experto en Ciencias del Deporte y Fisiología Humana.
-          Tu misión es diseñar rutinas basadas en evidencia científica.
+          Eres un Coach Experto. Diseña rutinas basadas en evidencia.
           
-          REGLAS ESTRICTAS:
-          1. Inicia cada día con 1 o 2 ejercicios de CALENTAMIENTO/ACTIVACIÓN (cal: true).
-          2. El resto son ejercicios de fuerza/hipertrofia (cal: false).
-          3. Usa SOLO los IDs numéricos del catálogo proporcionado.
-          4. La propiedad 'n' DEBE ser un nombre motivador (ej: "Espalda de Titán", "Piernas de Acero"). NUNCA uses "Día 1" o "Día 2".
-          5. La propiedad 'desc' DEBE explicar el enfoque del entrenamiento. NUNCA la dejes vacía.
-          6. Responde ÚNICAMENTE un array JSON.
+          REGLAS ESTRICTAS PARA AHORRAR TOKENS:
+          1. CADA DÍA DEBE TENER EXACTAMENTE ${numEjercicios} EJERCICIOS EN TOTAL. 1 de calentamiento (cal: true) y el resto de fuerza (cal: false).
+          2. Usa SOLO los IDs numéricos del catálogo.
+          3. 'n': Nombre corto (ej: "Espalda Fuerte").
+          4. 'desc': MÁXIMO 5 PALABRAS. Sé directo.
+          5. NO agregues introducciones ni explicaciones fuera del JSON.
 
           FORMATO JSON ESPERADO:
           [
             {
               "d": 1, 
-              "n": "Nombre del Bloque", 
-              "desc": "Justificación científica del día",
+              "n": "Nombre", 
+              "desc": "Máximo cinco palabras aquí",
               "ejs": [
                 {"id": número, "s": series, "r": "reps_o_seg", "t": descanso_seg, "cal": true_o_false}
               ]
@@ -103,22 +122,23 @@ export const useGeminiRoutine = () => {
         `;
 
         const promptDelUsuario = `
-          PERFIL DEL USUARIO:
-          - Objetivo: ${respuestas.objetivo}
-          - Nivel: ${respuestas.nivel}
+          PERFIL:
+          - Objetivo ID: ${respuestas.objetivo}
+          - Nivel ID: ${respuestas.nivel}
           - Días a entrenar: ${respuestas.frecuencia}
 
-          ¡ORDEN ESTRICTA!: DEBES generar EXACTAMENTE ${respuestas.frecuencia} días de entrenamiento. Ni uno más, ni uno menos. Tu array JSON debe tener exactamente ${respuestas.frecuencia} objetos.
+          GENERA EXACTAMENTE ${respuestas.frecuencia} DÍAS.
 
           Catálogo:
           ${catalogoSimplificado}
         `;
 
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
+        // Usamos Flash-Lite-Latest para máxima velocidad
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -138,24 +158,18 @@ export const useGeminiRoutine = () => {
         }
 
         const data = await response.json();
-// ======================================================================
-        // 🚀 EL RADAR DE TOKENS (AQUÍ LO PONES)
-        // ======================================================================
+
+        // RADAR DE TOKENS
         if (data.usageMetadata) {
-          console.log("📊 REPORTE DE TOKENS (COSTO DE ESTE USUARIO):", {
+          console.log("📊 REPORTE DE TOKENS:", {
             enviados: data.usageMetadata.promptTokenCount,
             recibidos: data.usageMetadata.candidatesTokenCount,
             total: data.usageMetadata.totalTokenCount
           });
-        } else {
-          console.log("📊 REPORTE DE TOKENS: No disponible en esta respuesta.");
         }
-        // ======================================================================
 
         const textoCrudo = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        console.log("💬 Respuesta cruda de Gemini:", textoCrudo);
         const resJSON = intentarRecuperarJSON(textoCrudo);        
-        
         const diasRaw = Array.isArray(resJSON) ? resJSON : (resJSON.plan || resJSON.rutina || []);
 
         return diasRaw.map((dia: any, index: number) => ({

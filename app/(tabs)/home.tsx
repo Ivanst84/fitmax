@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, Text, StyleSheet, StatusBar, ActivityIndicator, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, ActivityIndicator, ScrollView, Alert, TouchableOpacity, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,7 +17,9 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   
   const { session } = useAuth();
-  const { rutinaHoy, cargando, refetch } = useRoutines();
+  const avatarUrl = session?.user?.user_metadata?.avatar_url;
+  const fullName = session?.user?.user_metadata?.full_name || 'Atleta';
+const firstName = fullName.split(' ')[0];  const { rutinaHoy, cargando, refetch } = useRoutines();
   const { data: coachData, loading: loadingCoach, refetch: refetchCoach } = usePeriodization(); 
 
   const [volumenSemanal, setVolumenSemanal] = useState(0);
@@ -143,7 +145,7 @@ export default function HomeScreen() {
       refetchCoach();
 
     } catch (e: any) {
-      console.error("❌ ERROR FATAL EVOLUCIÓN:", e);
+      console.error(" ERROR FATAL EVOLUCIÓN:", e);
       Alert.alert("Error de Evolución", "No pudimos actualizar tu fase.");
     } finally {
       setEvolucionando(false);
@@ -187,14 +189,30 @@ export default function HomeScreen() {
     <View style={[styles.container, { paddingTop: Math.max(insets.top, spacing.lg) }]}>
       <StatusBar barStyle="light-content" />
       
-      <View style={styles.header}>
+<View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Hola, Atleta 👋</Text>
+          <Text style={styles.greeting}>Hola, {firstName} 👋</Text>
           <Text style={styles.appName}>FitMax</Text>
         </View>
-        <PressableCard style={styles.avatarContainer} onPress={() => router.push('/profile')}>
-          <Text style={styles.avatarText}>{getInitials()}</Text>
-        </PressableCard>
+        
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
+          {/* BOTÓN DE AGREGAR RUTINA */}
+          <PressableCard 
+            style={{ backgroundColor: colors.primary, width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' }}
+            onPress={() => router.push('/create-routine')} 
+          >
+            <Ionicons name="add" size={24} color="#000" />
+          </PressableCard>
+
+          {/* FOTO DE PERFIL DE GOOGLE */}
+          <PressableCard style={styles.avatarContainer} onPress={() => router.push('/profile')}>
+            {avatarUrl ? (
+              <Image source={{ uri: avatarUrl }} style={{ width: '100%', height: '100%', borderRadius: 50 }} />
+            ) : (
+              <Text style={styles.avatarText}>{getInitials()}</Text>
+            )}
+          </PressableCard>
+        </View>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
@@ -309,8 +327,6 @@ const styles = StyleSheet.create({
   cardMetaText: { ...typography.small, marginLeft: 4 },
   playButton: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
   loaderContainer: { height: 120, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.surface, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
-  
-  // 🔥 ESTILOS PARA EL BOTÓN DE EVOLUCIÓN
   evolveBtn: { backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 12, borderRadius: radius.md, marginTop: 15, gap: 8 },
   evolveBtnText: { color: '#000', fontWeight: 'bold', fontSize: 14 }
 });

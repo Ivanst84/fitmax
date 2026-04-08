@@ -150,8 +150,9 @@ export default function OnboardingScreen() {
       const planFinal = await generateRoutine(perfilFinal, catalogoDB);
 
       // 3. Bucle para guardar cada día (RUTINA + EJERCICIOS)
-      for (let i = 0; i < planFinal.length; i++) {
-        const dia = planFinal[i];
+   // 3. Bucle para guardar cada día en PARALELO (Ráfaga para reducir tiempos de espera)
+      await Promise.all(planFinal.map(async (dia: any, i: number) => {
+        
         // Aquí le asignamos el día real de la semana (1=Lunes, etc) basado en lo que eligió el usuario
         const diaSemanaReal = perfilFinal.dias_entrenamiento[i] || dia.dia_semana_sugerido;
 
@@ -173,7 +174,7 @@ export default function OnboardingScreen() {
 
         if (errR) {
           console.error("Error al crear Rutina:", errR.message);
-          continue; 
+          return; // 👈 Aquí cambia de 'continue' a 'return' para que siga con los demás días en el map
         }
 
         // B) PREPARAR LOS EJERCICIOS
@@ -194,7 +195,7 @@ export default function OnboardingScreen() {
             .insert(ejerciciosAInsertar);
           if (errEj) console.error(`Error insertando ejercicios para ${dia.dia_nombre}:`, errEj.message);
         }
-      }
+      }));
 
       // 4. GUARDAR PERFIL FÍSICO Y FINALIZAR 
       const pesoFinal = parseFloat(perfilFinal.peso_kg) || 75;

@@ -16,7 +16,6 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { session } = useAuth();
   
-  // 🚀 USAMOS LOS NUEVOS NOMBRES: rachaActual y mejorRacha
   const { rachaActual, mejorRacha, loading: loadingStreak } = useStreak(); 
   
   const [isSyncing, setIsSyncing] = useState(false);

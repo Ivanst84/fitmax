@@ -32,7 +32,6 @@ export default function RootLayout() {
             router.replace('/(auth)/login');
           }
         } else {
-          // 🚀 LÓGICA DE VERIFICACIÓN MULTI-DISPOSITIVO 🚀
           
           // A. Primero revisamos el celular (rápido)
           let hasProfile = await AsyncStorage.getItem(`onboarding_${session.user.id}`);
