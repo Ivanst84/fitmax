@@ -33,10 +33,7 @@ const PASOS = [
   { id: 'nivel', titulo: '¿Cuál es tu nivel?', subtitulo: 'Técnica y volumen de carga.', opciones: [{ id: 'principiante', label: 'Principiante', desc: '< 6 meses', icon: 'leaf-outline' }, { id: 'intermedio', label: 'Intermedio', desc: '1-2 años', icon: 'barbell-outline' }, { id: 'avanzado', label: 'Avanzado', desc: '> 2 años', icon: 'skull-outline' }] },
   { id: 'objetivo', titulo: '¿Tu meta principal?', subtitulo: 'Define rangos de reps y series.', opciones: [{ id: 'perder_peso', label: 'Perder Grasa', desc: 'Déficit y cardio', icon: 'flame-outline' }, { id: 'hipertrofia', label: 'Ganar Músculo', desc: '8-12 reps', icon: 'trending-up-outline' }, { id: 'fuerza', label: 'Fuerza Pura', desc: '1-5 reps', icon: 'fitness-outline' }] },
   { id: 'enfoque', titulo: '¿Qué zona priorizar?', subtitulo: 'Volumen extra en esta área.', opciones: [{ id: 'fullbody', label: 'Cuerpo Completo', desc: 'Armónico', icon: 'body-outline' }, { id: 'superior', label: 'Tren Superior', desc: 'Torso y brazos', icon: 'shirt-outline' }, { id: 'inferior', label: 'Tren Inferior', desc: 'Pierna y glúteo', icon: 'walk-outline' }] },
-  
-  // 🔥 AQUÍ CAMBIA: El nuevo paso de "frecuencia" con selector múltiple
   { id: 'frecuencia', titulo: '¿Qué días vas a entrenar?', subtitulo: 'Toca los días que irás al gimnasio.', custom: true, type: 'days' },
-  
   { id: 'duracion', titulo: '¿Tiempo por sesión?', subtitulo: 'Número de ejercicios.', opciones: [{ id: 30, label: '30 Minutos', desc: 'Sin descansos', icon: 'timer-outline' }, { id: 45, label: '45 Minutos', desc: 'Recomendado', icon: 'hourglass-outline' }, { id: 60, label: '60+ Minutos', desc: 'Completo', icon: 'stopwatch-outline' }] },
   { id: 'equipo', titulo: '¿Dónde entrenarás?', subtitulo: 'Solo ejercicios disponibles.', opciones: [{ id: 'casa', label: 'En Casa', desc: 'Peso corporal', icon: 'home-outline' }, { id: 'mancuernas', label: 'Mancuernas', desc: 'Gym básico', icon: 'disc-outline' }, { id: 'gym', label: 'Gym Completo', desc: 'Máquinas y racks', icon: 'business-outline' }] }
 ];
@@ -54,7 +51,6 @@ export default function OnboardingScreen() {
   const [pesoInput, setPesoInput] = useState('75');
   const [estaturaInputCM, setEstaturaInputCM] = useState('170');
   
-  // Estado para guardar los días seleccionados (Ej: [1, 3, 5] para L, M, V)
   const [diasSeleccionados, setDiasSeleccionados] = useState<number[]>([]);
 
   const totalPasos = PASOS.length;
@@ -88,14 +84,13 @@ export default function OnboardingScreen() {
     if (infoPaso.id === 'peso') nuevas.peso_kg = parseFloat(pesoInput);
     if (infoPaso.id === 'estatura') nuevas.altura_cm = parseFloat(estaturaInputCM);
     
-    // Validamos que haya seleccionado al menos 2 días
     if (infoPaso.id === 'frecuencia') {
       if (diasSeleccionados.length < 2) {
         Alert.alert("Atención", "Por favor selecciona al menos 2 días para ver resultados.");
         return;
       }
       nuevas.dias_entrenamiento = diasSeleccionados;
-      nuevas.frecuencia = diasSeleccionados.length; // Guardamos el conteo para Gemini
+      nuevas.frecuencia = diasSeleccionados.length; 
     }
 
     setRespuestas(nuevas);
@@ -127,14 +122,12 @@ export default function OnboardingScreen() {
       // ======================================================================
       let query = supabase.from('EJERCICIOS').select('id, nombre');
 
-      // 1. Filtro por Equipo (Basado en tu tabla CAT_EQUIPO)
       if (perfilFinal.equipo === 'casa') {
-        query = query.in('equipo_id', [1]); // 1 = Sin equipo
+        query = query.in('equipo_id', [1]); 
       } else if (perfilFinal.equipo === 'mancuernas') {
-        query = query.in('equipo_id', [1, 2]); // 1 = Sin equipo, 2 = Mancuernas
+        query = query.in('equipo_id', [1, 2]); 
       }
 
-      // 2. Filtro por Enfoque Muscular (Basado en tu tabla CAT_MUSCULOS)
       if (perfilFinal.enfoque === 'superior') {
         query = query.in('musculo_id', [1, 2, 3, 4, 5, 6, 7, 8, 9]); 
       } else if (perfilFinal.enfoque === 'inferior') {
@@ -144,19 +137,14 @@ export default function OnboardingScreen() {
       const { data: catalogoDB, error: errorCat } = await query;
       console.log("🏋️ Ejercicios encontrados para mandar a Gemini:", catalogoDB?.length);
       if (errorCat || !catalogoDB) throw new Error('No se pudo cargar el catálogo filtrado');
-      // ====================================================================== 
-
-      // 2. Generar Plan con Gemini (Le pasamos los días exactos)
+      
+      // 2. Generar Plan con Gemini 
       const planFinal = await generateRoutine(perfilFinal, catalogoDB);
 
-      // 3. Bucle para guardar cada día (RUTINA + EJERCICIOS)
-   // 3. Bucle para guardar cada día en PARALELO (Ráfaga para reducir tiempos de espera)
+      // 3. Bucle para guardar cada día en PARALELO
       await Promise.all(planFinal.map(async (dia: any, i: number) => {
-        
-        // Aquí le asignamos el día real de la semana (1=Lunes, etc) basado en lo que eligió el usuario
         const diaSemanaReal = perfilFinal.dias_entrenamiento[i] || dia.dia_semana_sugerido;
 
-        // A) INSERTAR LA RUTINA
         const { data: rutinaData, error: errR } = await supabase
           .from('RUTINAS')
           .insert([{ 
@@ -165,7 +153,7 @@ export default function OnboardingScreen() {
             descripcion: dia.descripcion,
             objetivo_id: perfilFinal.objetivo === 'perder_peso' ? 1 : perfilFinal.objetivo === 'hipertrofia' ? 2 : 3,
             nivel_id: perfilFinal.nivel === 'principiante' ? 1 : perfilFinal.nivel === 'intermedio' ? 2 : 3,
-            dia_semana: diaSemanaReal, // Se guarda el día que él tocó en la burbuja
+            dia_semana: diaSemanaReal, 
             duracion_min: perfilFinal.duracion || 45,
             es_personalizada: true
           }])
@@ -174,10 +162,9 @@ export default function OnboardingScreen() {
 
         if (errR) {
           console.error("Error al crear Rutina:", errR.message);
-          return; // 👈 Aquí cambia de 'continue' a 'return' para que siga con los demás días en el map
+          return; 
         }
 
-        // B) PREPARAR LOS EJERCICIOS
         const ejerciciosAInsertar = dia.ejercicios.map((ej: any, idx: number) => ({
           rutina_id: rutinaData.id,
           ejercicio_id: ej.ejercicio_id,
@@ -188,7 +175,6 @@ export default function OnboardingScreen() {
           es_calentamiento: ej.es_calentamiento !== undefined ? ej.es_calentamiento : (idx < 2)
         }));
 
-        // C) INSERTAR EN RUTINA_EJERCICIOS
         if (ejerciciosAInsertar.length > 0) {
           const { error: errEj } = await supabase
             .from('RUTINA_EJERCICIOS')
@@ -221,11 +207,13 @@ export default function OnboardingScreen() {
       if (perfilFinal.edad === '46_mas') añoNacimiento = añoActual - 50;
       const fechaNacAprox = `${añoNacimiento}-01-01`;
 
-      // Guardamos en USUARIOS incluyendo el arreglo de días reales
+      // ======================================================================
+      // 🚨 FIX: FRENO DE MANO PARA ERRORES DE GUARDADO
+      // ======================================================================
       const { error: updateError } = await supabase.from('USUARIOS').upsert({
         id: user.id,
         email: user.email,
-        dias_entrenamiento: perfilFinal.dias_entrenamiento, // Ej: [1, 3, 5]
+        dias_entrenamiento: perfilFinal.dias_entrenamiento, 
         peso_kg: pesoFinal,
         altura_cm: alturaFinal,
         objetivo: objetivoId,      
@@ -234,25 +222,29 @@ export default function OnboardingScreen() {
         fecha_nacimiento: fechaNacAprox 
       });
 
+      // 🛑 Freno 1: Si falla la tabla USUARIOS, lanzamos el error y abortamos
       if (updateError) {
-        console.error('❌ ERROR AL GUARDAR EN TABLA USUARIOS:', updateError.message);
-        Alert.alert("Error de Guardado", updateError.message);
-      } else {
-        console.log("✅ Perfil de usuario guardado correctamente.");
+        throw new Error(`No pudimos guardar tu perfil: ${updateError.message}`);
       }
 
       const { error: medidaError } = await supabase.from('MEDIDAS').insert({
-        usuario_id: user.id,
+        user_id: user.id,
         peso_kg: pesoFinal,
         fecha: new Date().toISOString()
       });
 
+      // 🛑 Freno 2: Si falla la tabla MEDIDAS, lanzamos el error y abortamos
+      if (medidaError) {
+        throw new Error(`No pudimos guardar tus medidas: ${medidaError.message}`);
+      }
+
+      // ✅ Si todo salió bien, AHORA SÍ mandamos al usuario al Home
       await AsyncStorage.setItem(`onboarding_${user.id}`, 'true');
       router.replace('/(tabs)/home');
 
     } catch (e: any) {
       console.error('❌ FALLO TOTAL:', e.message);
-      Alert.alert('Error', e.message);
+      Alert.alert('¡Ups!', e.message); // El usuario verá exactamente por qué falló
     } finally {
       setGenerando(false);
     }

@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   },
   headerLeft: { flex: 1 },
   headerTitle: {
-    ...typography.h3,
+    ...typography.h1,
     fontSize: 16,
     color: colors.textPrimary,
     marginBottom: 6,

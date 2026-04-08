@@ -8,10 +8,12 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { supabase } from '../lib/supabase';
-// 🚀 Importamos buttons
 import { colors, spacing, radius, typography, buttons } from '../constants/theme';
+// 🚀 Importamos PressableCard para el toque Premium
+import PressableCard from '../components/ui/PressableCard';
 
-interface Ejercicio { id: string; nombre: string; musculo_id: number; es_premium: boolean; }
+// Mantenemos la interfaz igual por si la necesitas a futuro
+interface Ejercicio { id: string; nombre: string; musculo_id: number; es_premium?: boolean; }
 
 const MUSCULOS: Record<number, string> = { 1: 'Pecho', 2: 'Espalda', 4: 'Hombros', 5: 'Bíceps', 6: 'Tríceps', 8: 'Abdomen', 10: 'Glúteos', 11: 'Piernas' };
 
@@ -27,7 +29,14 @@ export default function SelectExercisesScreen() {
   useEffect(() => { cargarCatalogo(); }, []);
 
   const cargarCatalogo = async () => {
-    const { data, error } = await supabase.from('EJERCICIOS').select('id, nombre, musculo_id, es_premium').order('nombre', { ascending: true });
+    // 🚀 V1: Modelo 100% Gratuito (Freedom)
+    // TODO (V2): Agregar 'es_premium' al select y descomentar la línea de abajo para la pasarela de pagos
+    const { data, error } = await supabase
+      .from('EJERCICIOS')
+      .select('id, nombre, musculo_id') // Quité el es_premium para ahorrar ancho de banda en V1
+      // .eq('es_premium', false) // Descomentar en V2 para ocultar premium a usuarios free
+      .order('nombre', { ascending: true });
+      
     if (!error && data) setEjercicios(data);
     setCargando(false);
   };
@@ -37,7 +46,10 @@ export default function SelectExercisesScreen() {
     return ejercicios.filter(e => e.nombre.toLowerCase().includes(busqueda.toLowerCase()) || (MUSCULOS[e.musculo_id] || '').toLowerCase().includes(busqueda.toLowerCase()));
   }, [ejercicios, busqueda]);
 
-  const toggleEjercicio = (id: string) => { Haptics.selectionAsync(); setSeleccionados(prev => prev.includes(id) ? prev.filter(e => e !== id) : [...prev, id]); };
+  const toggleEjercicio = (id: string) => { 
+    Haptics.selectionAsync(); 
+    setSeleccionados(prev => prev.includes(id) ? prev.filter(e => e !== id) : [...prev, id]); 
+  };
 
   const guardarRutina = async () => {
     if (seleccionados.length === 0) return;
@@ -85,21 +97,24 @@ export default function SelectExercisesScreen() {
           renderItem={({ item }) => {
             const isSelected = seleccionados.includes(item.id);
             return (
-              <TouchableOpacity style={[s.card, isSelected && s.cardSelected]} onPress={() => toggleEjercicio(item.id)} activeOpacity={0.8}>
+              // 🚀 CAMBIADO A PRESSABLE CARD (se quita el activeOpacity porque la tarjeta ya lo maneja con animación)
+              <PressableCard style={[s.card, isSelected && s.cardSelected]} onPress={() => toggleEjercicio(item.id)}>
                 <View style={[s.checkbox, isSelected && s.checkboxSelected]}>{isSelected && <Ionicons name="checkmark" size={16} color="#000" />}</View>
                 <View style={s.cardInfo}>
                   <Text style={[s.cardTitle, isSelected && s.cardTitleSelected]}>{item.nombre}</Text>
                   <Text style={s.cardSubtitle}>{MUSCULOS[item.musculo_id] || 'General'}</Text>
                 </View>
-                {item.es_premium && <View style={s.proBadge}><Text style={s.proText}>PRO</Text></View>}
-              </TouchableOpacity>
+                
+                {/* 🚀 TODO (V2): Descomentar esta línea para habilitar el Badge PRO visualmente */}
+                {/* {item.es_premium && <View style={s.proBadge}><Text style={s.proText}>PRO</Text></View>} */}
+                
+              </PressableCard>
             );
           }}
         />
       )}
 
       <View style={s.footer}>
-        {/* 🚀 USAMOS EL BOTÓN DEL TEMA */}
         <TouchableOpacity style={[buttons.primary, seleccionados.length === 0 && { opacity: 0.5 }]} disabled={seleccionados.length === 0 || guardando} onPress={guardarRutina}>
           {guardando ? <ActivityIndicator color="#000" /> : (
             <>

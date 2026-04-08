@@ -35,7 +35,7 @@ export default function StatsScreen() {
 
         <LinearGradient colors={[colors.primary, '#FF8C00']} start={{x: 0, y: 0}} end={{x: 1, y: 0}} style={s.totalCard}>
           <View style={{ flex: 1 }}>
-            <Text style={s.totalLabel}>VOLUMEN TOTAL ACUMULADO POR DIASZX</Text>
+            <Text style={s.totalLabel}>VOLUMEN TOTAL ACUMULADO </Text>
             {/* Este número es la excepción a la regla, es un número Hero gigante */}
             <Text style={s.totalValue}>{stats.totalKgs.toLocaleString()} KG</Text>
             <View style={s.comparisonBox}>

@@ -11,7 +11,7 @@ import { useRoutines } from '../../hooks/useRoutines';
 import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase'; 
 import PressableCard from '../../components/ui/PressableCard';
-
+import { processOfflineQueue } from '../../lib/offlineQueue';
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -19,12 +19,15 @@ export default function HomeScreen() {
   const { session } = useAuth();
   const avatarUrl = session?.user?.user_metadata?.avatar_url;
   const fullName = session?.user?.user_metadata?.full_name || 'Atleta';
-const firstName = fullName.split(' ')[0];  const { rutinaHoy, cargando, refetch } = useRoutines();
+  const firstName = fullName.split(' ')[0];  
+
+  const { rutinaHoy, cargando, refetch } = useRoutines();
   const { data: coachData, loading: loadingCoach, refetch: refetchCoach } = usePeriodization(); 
 
   const [volumenSemanal, setVolumenSemanal] = useState(0);
   const [sesionesSemana, setSesionesSemana] = useState(0);
   const [metaSesiones, setMetaSesiones] = useState(3);
+  const [cargandoStats, setCargandoStats] = useState(true);
   
   // 🔥 Estado para el botón de evolución
   const [evolucionando, setEvolucionando] = useState(false);
@@ -60,17 +63,42 @@ const firstName = fullName.split(' ')[0];  const { rutinaHoy, cargando, refetch 
     }
   };
 
+  // ============================================================================
+  // ⚡ FIX DE RENDIMIENTO: PARALELISMO PURO (Promise.all)
+  // ============================================================================
   useFocusEffect(
     useCallback(() => {
-      fetchEstadisticas();
-      refetch(); 
-      refetchCoach(); 
+      let isActive = true;
+const sincronizarHome = async () => {
+        if (!session?.user?.id) return;
+        setCargandoStats(true);
+        
+        // 🚀 EL CAMIÓN RECOLECTOR PASA POR AQUÍ CADA QUE ABREN EL HOME
+        await processOfflineQueue(); 
+
+        await Promise.all([
+          fetchEstadisticas(),
+          refetch(),
+          refetchCoach()
+        ]);
+
+        if (isActive) setCargandoStats(false);
+      };
+     
+
+      sincronizarHome();
+
+      return () => { isActive = false; };
     }, [session?.user?.id])
+  
+  
+  
+  
   );
 
   const getInitials = () => {
-    const fullName = session?.user?.user_metadata?.full_name || session?.user?.email || 'U';
-    return fullName.substring(0, 2).toUpperCase();
+    const fullNameStr = session?.user?.user_metadata?.full_name || session?.user?.email || 'U';
+    return fullNameStr.substring(0, 2).toUpperCase();
   };
 
   // ============================================================================
@@ -135,14 +163,12 @@ const firstName = fullName.split(' ')[0];  const { rutinaHoy, cargando, refetch 
       }
 
       // 3. 🧹 LIMPIEZA DEL PLATEAU (Para que desaparezca el botón)
-      // OPCIÓN B: Actualizamos la fecha de registro en el usuario temporalmente para "engañar" al cálculo
       await supabase.from('USUARIOS').update({ fecha_registro: new Date().toISOString() }).eq('id', user.id);
 
       Alert.alert("¡Nivel Superado! 🦍🔥", "Tus rutinas han evolucionado. ¡A darle con todo!");
       
-      // Refrescamos la UI
-      refetch();
-      refetchCoach();
+      // Refrescamos la UI (usando nuestra nueva carga en paralelo)
+      await Promise.all([refetch(), refetchCoach()]);
 
     } catch (e: any) {
       console.error(" ERROR FATAL EVOLUCIÓN:", e);
@@ -153,7 +179,8 @@ const firstName = fullName.split(' ')[0];  const { rutinaHoy, cargando, refetch 
   };
 
   const renderPlanDeHoy = () => {
-    if (cargando) return <View style={styles.loaderContainer}><ActivityIndicator color={colors.primary} /></View>;
+    // Usamos el cargandoGlobal (cargandoStats) o el del hook para mostrar el loader
+    if (cargando || cargandoStats) return <View style={styles.loaderContainer}><ActivityIndicator color={colors.primary} /></View>;
     if (!rutinaHoy) return null;
 
     if (rutinaHoy.isRest) {
@@ -189,7 +216,7 @@ const firstName = fullName.split(' ')[0];  const { rutinaHoy, cargando, refetch 
     <View style={[styles.container, { paddingTop: Math.max(insets.top, spacing.lg) }]}>
       <StatusBar barStyle="light-content" />
       
-<View style={styles.header}>
+      <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Hola, {firstName} 👋</Text>
           <Text style={styles.appName}>FitMax</Text>
@@ -290,7 +317,12 @@ const firstName = fullName.split(' ')[0];  const { rutinaHoy, cargando, refetch 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Tu plan de hoy</Text>
           <View style={styles.headerActions}>
-            <PressableCard onPress={() => { refetch(); fetchEstadisticas(); }} style={styles.iconButton}>
+            <PressableCard onPress={async () => { 
+                setCargandoStats(true); 
+                await Promise.all([refetch(), fetchEstadisticas(), refetchCoach()]); 
+                setCargandoStats(false); 
+              }} 
+              style={styles.iconButton}>
               <Ionicons name="refresh" size={22} color={colors.textSecondary} />
             </PressableCard>
           </View>

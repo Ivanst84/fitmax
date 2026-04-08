@@ -21,7 +21,6 @@ import { useWorkoutSession } from '../../hooks/useWorkoutSession';
 import ExerciseGuideCard from '../../components/ui/ExerciseGuideCard';
 import { supabase } from '../../lib/supabase';
 
-// (Los componentes TimerIsland y RestTimerIsland siguen exactamente igual aquí arriba)
 type TimerHandle = { getElapsedSeconds: () => number; };
 const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESIÓN ACTIVA' }, ref) => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -87,19 +86,23 @@ export default function WorkoutSessionScreen() {
   const [aiMessage, setAiMessage] = useState("Generando tu resumen épico...");
   const [cargandoIA, setCargandoIA] = useState(false);
 
-  // 🚀 ESTADO NUEVO: Rastrear qué set estamos haciendo
-  const [activeSetIndex, setActiveSetIndex] = useState(0);
-
   const timerRef = useRef<TimerHandle>(null);
   const viewShotRef = useRef<ViewShot>(null);
 
-  // 🚀 EFECTO NUEVO: Actualiza el activeSetIndex automáticamente
-  useEffect(() => {
-    if (!currentExercise) return;
-    const currentSetsInfo = setsData[currentExercise.id] || [];
-    const firstIncomplete = currentSetsInfo.findIndex((s: any) => !s.completed);
-    setActiveSetIndex(firstIncomplete === -1 ? currentSetsInfo.length - 1 : firstIncomplete);
-  }, [setsData, currentExercise]);
+  // ============================================================================
+  // ⚡ FIX DE RENDIMIENTO: Selector Granular con useMemo (Elimina el useEffect)
+  // ============================================================================
+  const currentSetsMemo = useMemo(() => {
+    if (!currentExercise) return [];
+    return setsData[currentExercise.id] || [];
+  }, [setsData, currentExercise?.id]);
+
+  const activeSetIndex = useMemo(() => {
+    if (currentSetsMemo.length === 0) return 0;
+    const firstIncomplete = currentSetsMemo.findIndex((s: any) => !s.completed);
+    return firstIncomplete === -1 ? currentSetsMemo.length - 1 : firstIncomplete;
+  }, [currentSetsMemo]);
+  // ============================================================================
 
   const formatTime = (sec: number) => { const m = Math.floor(sec / 60); const s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
@@ -142,14 +145,14 @@ const handleFinish = () => {
               const tiempoFinalSegundos = timerRef.current?.getElapsedSeconds() ?? 0;
               const tiempoFinalStr = formatTime(tiempoFinalSegundos);
               let volCalculado = 0;
-              let repsTotales = 0; // 👈 NUEVA VARIABLE
+              let repsTotales = 0; 
               ejerciciosActivos.forEach((ex: any) => { 
                 (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) { volCalculado += (parseFloat(s.kg) || 0) * (parseInt(s.reps) || 0); repsTotales += parseInt(s.reps) || 0; } }); });
 
               // 🧠 ------------------------------------------------------------
               // INICIO DE LA MAGIA FITMAX: CÁLCULO CIENTÍFICO
               // ---------------------------------------------------------------
-              let caloriasReales = 10; // Base de respaldo
+              let caloriasReales = 10; 
               const { data: { user } } = await supabase.auth.getUser();
               
 
@@ -176,14 +179,12 @@ const handleFinish = () => {
 
               setWorkoutStats({ volume: volCalculado, sets: setsCalculados, finalTimeStr: tiempoFinalStr });
               
-              // 🚀 Pasamos caloriasReales a tu función de guardado
               const id = await finishAndSaveWorkout(rutinaId as string, rutina?.nombre || 'Rutina', tiempoFinalSegundos, volCalculado, setsCalculados, caloriasReales);
               
               if (id) {
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 setSavedSessionId(id); 
                 setShowSummary(true); 
-                // 🚀 Y también se lo pasamos a la IA para que te felicite
                 generarMensajeIA(volCalculado, setsCalculados, tiempoFinalStr, caloriasReales);
               } else throw new Error("No se pudo guardar");
             } catch (e) { 
@@ -217,7 +218,8 @@ const handleFinish = () => {
 
   if (cargando || !currentExercise) return <View style={s.center}><ActivityIndicator color={colors.primary} size="large" /></View>;
 
-  const currentSets = setsData[currentExercise.id] || [];
+  // 🚀 FIX: Usamos nuestro currentSetsMemo hiper-optimizado en lugar de extraerlo de setsData de nuevo
+  const currentSets = currentSetsMemo;
   const equipoId = currentExercise.ejercicio.equipo_id;
   const esPesoCorporal = [1, 3, 9, 10].includes(equipoId);
   const esCalentamiento = currentExercise.es_calentamiento;

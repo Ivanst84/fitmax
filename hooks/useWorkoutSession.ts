@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../lib/supabase';
+// 🚀 IMPORTACIÓN CLAVE PARA GUARDAR SIN INTERNET
+import { saveSessionWithFallback } from '../lib/offlineQueue';
 
 export function useWorkoutSession(ejerciciosIniciales: any[]) {
   const [activeExercises, setActiveExercises] = useState<any[]>([]);
@@ -80,47 +82,49 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     setSetsData({ ...setsData, [exerciseId]: newSets });
   };
 
-  // 🚀 LA FUNCIÓN QUE CORREGIMOS PARA QUE DEVUELVA EL ID 🚀
+  // 🚀 LA FUNCIÓN QUE CORREGIMOS PARA QUE USE EL OFFLINE QUEUE 🚀
   const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: number, vol: number, sets: number, kcal: number) => {
     try {
       setIsSaving(true);
       const { data: { user } } = await supabase.auth.getUser();
       
-      if (!user) return null; // 👈 Antes decía "return false", ahora es null
+      if (!user) return null; 
 
-      // 1. Guarda la sesión general
-      const { data: sesion, error: sErr } = await supabase.from('HISTORIAL_SESIONES').insert({
-        user_id: user.id, rutina_id: rutinaId, nombre_rutina: nombre,
-        duracion_segundos: segundos, volumen_total_kg: vol,
-        sets_completados: sets, calorias_quemadas: kcal
-      }).select('id').single(); // 👈 Aseguramos pedir el ID
+      // 1. Armamos el "Paquete" de la sesión principal
+      const sessionPayload = {
+        user_id: user.id, 
+        rutina_id: rutinaId, 
+        nombre_rutina: nombre,
+        duracion_segundos: segundos, 
+        volumen_total_kg: vol,
+        sets_completados: sets, 
+        calorias_quemadas: kcal,
+        fecha: new Date().toISOString() // Muy importante para el orden
+      };
 
-      if (sErr) throw sErr;
-
-      // 2. Prepara el detalle de ejercicios con SALVAVIDAS 🛡️
-      const logs = activeExercises.map(ex => ({
-        sesion_id: sesion.id,
+      // 2. Armamos el "Paquete" del detalle de cada ejercicio
+      const exerciseLogs = activeExercises.map(ex => ({
         user_id: user.id,
         ejercicio_id: ex.ejercicio_id,
         nombre_ejercicio: ex.ejercicio?.nombre || 'Ejercicio sin nombre',
         series_json: setsData[ex.id] || [] 
       }));
 
-      // 3. Inserta y captura el error exacto 🚨
-      const { error: logErr } = await supabase.from('HISTORIAL_EJERCICIOS').insert(logs);
-      
-      if (logErr) {
-        console.error("❌ ERROR SUPABASE AL GUARDAR HISTORIAL_EJERCICIOS:", logErr.message, logErr.details);
-        throw logErr;
+      // 3. 🛡️ Enviamos todo a nuestro guardián Offline
+      const result = await saveSessionWithFallback(sessionPayload, exerciseLogs);
+
+      if (result.queued) {
+        console.log(`📡 [Workout] Sin conexión. Sesión encolada para subirse luego.`);
       } else {
-        console.log(`✅ ¡ÉXITO! ${logs.length} ejercicios guardados en el historial.`);
+        console.log(`✅ [Workout] Sesión guardada directamente en la nube.`);
       }
 
-      return sesion.id; // 👈 ¡EL CAMBIO MÁGICO! Devolvemos el string del ID, no un "true"
+      // Devolvemos el ID real si se guardó, o un ID falso temporal si está offline
+      return result.sessionId ?? `offline_${Date.now()}`;
 
     } catch (e) {
-      console.error("❌ Fallo general al guardar:", e);
-      return null; // 👈 Antes decía "return false", ahora es null
+      console.error("❌ Fallo crítico al guardar:", e);
+      return null; 
     } finally { 
       setIsSaving(false); 
     }

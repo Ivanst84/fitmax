@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { runExerciseSync } from '../../lib/syncExerciseDB';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
 import { useStreak } from '../../hooks/useStreak'; // 👈 Nuestro nuevo cerebro de racha
@@ -57,12 +56,7 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleSync = async () => {
-    setIsSyncing(true);
-    const success = await runExerciseSync();
-    setIsSyncing(false);
-    if (success) Alert.alert("¡Éxito!", "Ejercicios añadidos.");
-  };
+
 
   return (
     <View style={s.container}>
@@ -80,9 +74,6 @@ export default function ProfileScreen() {
             <Text style={s.editBtnText}>Editar Perfil</Text>
           </PressableCard>
 
-          <PressableCard onPress={handleSync} disabled={isSyncing} style={s.adminBtn}>
-            {isSyncing ? <ActivityIndicator color="#000" /> : <Text style={s.adminBtnText}>⚠️ ADMIN: Cargar Ejercicios</Text>}
-          </PressableCard>
         </View>
 
         {/* RENDIMIENTO */}

@@ -10,10 +10,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { supabase } from '../../lib/supabase';
-// 🚀 IMPORTAMOS BUTTONS
+// 🚀 IMPORTAMOS BUTTONS Y PRESSABLECARD
 import { colors, spacing, radius, typography, buttons } from '../../constants/theme';
 import { getRelativeTime } from '../../lib/dateUtils';
 import ExerciseGuideCard from '../../components/ui/ExerciseGuideCard';
+import PressableCard from '../../components/ui/PressableCard'; // 👈 Añadido el toque Premium
 
 export default function ExerciseDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -65,6 +66,7 @@ export default function ExerciseDetail() {
           ) : (
             <View style={s.videoPlaceholder}><Ionicons name="barbell-outline" size={60} color={colors.border} /></View>
           )}
+          {/* El botón de back sobre el video se queda como TouchableOpacity por estándar de UI */}
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}><Ionicons name="chevron-down" size={28} color="#fff" /></TouchableOpacity>
         </View>
 
@@ -74,11 +76,14 @@ export default function ExerciseDetail() {
               <Text style={s.nombre}>{ejercicio.nombre}</Text>
               <Text style={s.subtitle}>Enfoque: {ejercicio.musculo_id === 15 ? 'Cardio' : 'Hipertrofia'}</Text>
             </View>
-            {ejercicio.es_premium && (
+            
+            {/* 🚀 TODO (V2): Descomentar para mostrar el badge PRO cuando implementes los pagos */}
+            {/* {ejercicio.es_premium && (
               <LinearGradient colors={[colors.warning, '#D97706']} style={s.proBadge}>
                 <Text style={s.proText}>PRO</Text>
               </LinearGradient>
-            )}
+            )} */}
+
           </View>
 
           <View style={s.statsRow}>
@@ -96,9 +101,14 @@ export default function ExerciseDetail() {
             <Text style={s.practiceDesc}>Marca las series para validar tu forma</Text>
             <View style={s.seriesRow}>
               {[1, 2, 3].map((num) => (
-                <TouchableOpacity key={num} style={[s.serieCircle, series >= num && s.serieCircleActive]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSeries(num); }}>
+                // 🚀 Cambiado a PressableCard
+                <PressableCard 
+                  key={num} 
+                  style={[s.serieCircle, series >= num && s.serieCircleActive]} 
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSeries(num); }}
+                >
                   <Text style={[s.serieNum, series >= num && s.serieNumActive]}>{series >= num ? '✓' : num}</Text>
-                </TouchableOpacity>
+                </PressableCard>
               ))}
             </View>
           </View>
@@ -106,10 +116,10 @@ export default function ExerciseDetail() {
       </ScrollView>
 
       <View style={s.footer}>
-        {/* 🚀 BOTÓN UNIVERSAL */}
-        <TouchableOpacity style={buttons.primary} onPress={() => router.back()}>
+        {/* 🚀 Cambiado a PressableCard para el botón principal de abajo */}
+        <PressableCard style={buttons.primary} onPress={() => router.back()}>
           <Text style={buttons.primaryText}>ENTENDIDO</Text>
-        </TouchableOpacity>
+        </PressableCard>
       </View>
     </View>
   );

@@ -8,7 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useAuth } from '../hooks/useAuth';
 import { colors } from '../constants/theme';
 import { supabase } from '../lib/supabase';
-
+import { ErrorBoundary } from '../components/ErrorBoundary';
 // Congelamos la pantalla de carga nativa
 SplashScreen.preventAutoHideAsync();
 
@@ -83,6 +83,7 @@ export default function RootLayout() {
   }
 
   return (
+    <ErrorBoundary>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <Stack screenOptions={{ headerShown: false, animation: 'fade' }}>
@@ -109,5 +110,6 @@ export default function RootLayout() {
         </Stack>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
