@@ -32,6 +32,8 @@ export interface SessionPayload {
   volumen_total_kg: number;
   sets_completados: number;
   calorias_quemadas: number;
+    fecha: string; // ← AGREGAR ESTO
+
 }
 
 export interface ExerciseLogPayload {
@@ -179,49 +181,57 @@ const uploadSessionToSupabase = async (
  *
  * @returns número de sesiones sincronizadas exitosamente
  */
+// 1. 🛡️ AGREGA ESTO JUSTO ARRIBA DE LA FUNCIÓN
+let isProcessingQueue = false;
+
+// 2. MODIFICA LA FUNCIÓN PARA QUE QUEDE ASÍ:
 export const processOfflineQueue = async (): Promise<number> => {
-  const queue = await readQueue();
+  // 🛡️ Semáforo: Si ya hay un proceso corriendo, no hacemos nada
+  if (isProcessingQueue) {
+    console.log("[OfflineQueue] 🚦 Cola ocupada, ignorando llamado duplicado.");
+    return 0;
+  }
+  
+  isProcessingQueue = true; // Ponemos el semáforo en rojo
 
-  if (queue.length === 0) return 0;
+  try {
+    const queue = await readQueue();
+    if (queue.length === 0) return 0;
 
-  console.log(`[OfflineQueue] Procesando ${queue.length} sesión(es) pendiente(s)...`);
+    console.log(`[OfflineQueue] Procesando ${queue.length} sesión(es) pendiente(s)...`);
 
-  const remaining: PendingSession[] = [];
-  let syncedCount = 0;
+    const remaining: PendingSession[] = [];
+    let syncedCount = 0;
 
-  for (const pending of queue) {
-    // Descartamos intentos agotados (evita la cola zombi)
-    if (pending.retryCount >= MAX_RETRY_ATTEMPTS) {
-      console.warn(
-        `[OfflineQueue] Descartando sesión ${pending.id} tras ${MAX_RETRY_ATTEMPTS} intentos.`
-      );
-      continue;
+    for (const pending of queue) {
+      if (pending.retryCount >= MAX_RETRY_ATTEMPTS) {
+        console.warn(`[OfflineQueue] Descartando sesión ${pending.id} tras ${MAX_RETRY_ATTEMPTS} intentos.`);
+        continue;
+      }
+
+      const result = await uploadSessionToSupabase(pending.session, pending.exerciseLogs);
+
+      if (result.success) {
+        syncedCount++;
+        console.log(`[OfflineQueue]  Sesión ${pending.id} sincronizada.`);
+      } else {
+        remaining.push({ ...pending, retryCount: pending.retryCount + 1 });
+        console.warn(`[OfflineQueue]  Sesión ${pending.id} sigue pendiente (intento ${pending.retryCount + 1}).`);
+      }
     }
 
-    const result = await uploadSessionToSupabase(
-      pending.session,
-      pending.exerciseLogs
-    );
+    await writeQueue(remaining);
 
-    if (result.success) {
-      syncedCount++;
-      console.log(`[OfflineQueue] ✅ Sesión ${pending.id} sincronizada.`);
-    } else {
-      // Volvemos a encolar con el contador incrementado
-      remaining.push({ ...pending, retryCount: pending.retryCount + 1 });
-      console.warn(
-        `[OfflineQueue] ⚠️ Sesión ${pending.id} sigue pendiente (intento ${pending.retryCount + 1}).`
-      );
+    if (syncedCount > 0) {
+      console.log(`[OfflineQueue] Sincronización completada: ${syncedCount} sesión(es) subidas.`);
     }
+
+    return syncedCount;
+    
+  } finally {
+    // 🛡️ IMPORTANTE: Ponemos el semáforo en verde pase lo que pase
+    isProcessingQueue = false; 
   }
-
-  await writeQueue(remaining);
-
-  if (syncedCount > 0) {
-    console.log(`[OfflineQueue] Sincronización completada: ${syncedCount} sesión(es) subidas.`);
-  }
-
-  return syncedCount;
 };
 
 /**

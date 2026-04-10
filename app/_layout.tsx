@@ -1,7 +1,6 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect, useState } from 'react';
-import { View } from 'react-native';
+import { useEffect, useState, useRef } from 'react';import { View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -17,11 +16,18 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const [isReady, setIsReady] = useState(false);
+const hasNavigated = useRef(false);
+useEffect(() => {
+    if (loading) return;
+    hasNavigated.current = false;
+  }, [session]);
 
   useEffect(() => {
-    if (loading) return;
+    // Si está cargando o ya navegamos en esta sesión, no hacemos nada
+    if (loading || hasNavigated.current) return;
 
     const checkAuthAndOnboarding = async () => {
+      hasNavigated.current = true; // Bloqueamos re-ejecuciones
       try {
         const inAuthGroup = segments[0] === '(auth)';
         const inOnboardingGroup = segments[0] === '(onboarding)';
@@ -32,22 +38,18 @@ export default function RootLayout() {
             router.replace('/(auth)/login');
           }
         } else {
-          
           // A. Primero revisamos el celular (rápido)
           let hasProfile = await AsyncStorage.getItem(`onboarding_${session.user.id}`);
 
-          // B. Si el celular es nuevo (no tiene el archivo), le preguntamos a la NUBE
+          // B. Si el celular es nuevo, le preguntamos a la NUBE
           if (!hasProfile) {
-            // Buscamos si el usuario ya tiene al menos una RUTINA creada. 
-            // Si tiene rutinas, es obvio que ya pasó el onboarding anteriormente.
-            const { data: rutinas, error } = await supabase
+            const { data: rutinas } = await supabase
               .from('RUTINAS')
               .select('id')
               .eq('user_id', session.user.id)
               .limit(1);
 
             if (rutinas && rutinas.length > 0) {
-              // Si la nube dice que ya tiene rutinas, guardamos en el cel y saltamos
               await AsyncStorage.setItem(`onboarding_${session.user.id}`, 'true');
               hasProfile = 'true';
             }
@@ -68,6 +70,7 @@ export default function RootLayout() {
         }
       } catch (error) {
         console.error('❌ Error crítico en enrutamiento:', error);
+        hasNavigated.current = false; // Liberamos si hubo error
       } finally {
         setIsReady(true);
         await SplashScreen.hideAsync();
@@ -75,7 +78,7 @@ export default function RootLayout() {
     };
 
     checkAuthAndOnboarding();
-  }, [session, loading, segments]);
+  }, [session, loading]); // 👈 Quitamos 'segments' de aquí
 
   // Pantalla de seguridad mientras decide
   if (!isReady || loading) {

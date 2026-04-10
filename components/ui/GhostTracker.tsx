@@ -84,7 +84,7 @@ export default function GhostTracker({
     } else if (!isBeating && hasBeatRef.current) {
       hasBeatRef.current = false;
     }
-  }, [currentKg, currentReps, setIndex]);
+  }, [currentKg, currentReps, setIndex,ghostVol]);
 
   if (ghostVol <= 0 || isCompleted) return null;
 

@@ -96,7 +96,13 @@ export const useGeminiRoutine = () => {
       }
 
       const resJSON = intentarRecuperarJSON(textoCrudo);        
-      const diasRaw = Array.isArray(resJSON) ? resJSON : (resJSON.plan || resJSON.rutina || []);
+     const diasRaw = Array.isArray(resJSON) 
+  ? resJSON 
+  : (resJSON.plan || resJSON.rutina || resJSON.days || resJSON.dias || []);
+
+if (diasRaw.length === 0) {
+  throw new Error("La IA devolvió un plan vacío. Intenta ajustar tus parámetros.");
+}
 
       return diasRaw.map((dia: any, index: number) => ({
         dia_semana_sugerido: dia.d || index + 1,

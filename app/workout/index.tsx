@@ -42,20 +42,33 @@ const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESI
 });
 
 const RestTimerIsland = ({ initialSeconds, onFinish, onSkip }: { initialSeconds: number, onFinish: () => void, onSkip: () => void }) => {
+  // 🛡️ Marcamos exactamente en qué milisegundo debe terminar el descanso
+  const endTimeRef = useRef(Date.now() + initialSeconds * 1000);
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+
   useEffect(() => {
-    if (secondsLeft <= 0) { onFinish(); return; }
+    // Polling cada 500ms para asegurar fluidez y capturar el despertar del background
     const interval = setInterval(() => {
-      setSecondsLeft(prev => { if (prev <= 1) { clearInterval(interval); onFinish(); return 0; } return prev - 1; });
-    }, 1000);
+      const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        onFinish(); // Ejecutamos la acción final
+        return;
+      }
+      setSecondsLeft(remaining);
+    }, 500); 
+
     return () => clearInterval(interval);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); 
+  }, [onFinish]); // 👈 Escuchamos onFinish para evitar cierres obsoletos (stale closures)
+
   return (
     <View style={s.restCard}>
       <Text style={s.restTitle}>DESCANSO</Text>
       <Text style={s.restTimer}>{secondsLeft}s</Text>
-      <PressableCard style={s.skipBtn} onPress={onSkip}><Text style={s.skipText}>Saltar descanso</Text></PressableCard>
+      <PressableCard style={s.skipBtn} onPress={onSkip}>
+        <Text style={s.skipText}>Saltar descanso</Text>
+      </PressableCard>
     </View>
   );
 };

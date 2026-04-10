@@ -1,51 +1,106 @@
 import { 
   View, Text, StyleSheet, TouchableOpacity, 
-  ScrollView, StatusBar, ActivityIndicator, Dimensions 
+  ScrollView, StatusBar, ActivityIndicator 
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 
 import { supabase } from '../../lib/supabase';
-// 🚀 IMPORTAMOS BUTTONS Y PRESSABLECARD
 import { colors, spacing, radius, typography, buttons } from '../../constants/theme';
 import { getRelativeTime } from '../../lib/dateUtils';
 import ExerciseGuideCard from '../../components/ui/ExerciseGuideCard';
-import PressableCard from '../../components/ui/PressableCard'; // 👈 Añadido el toque Premium
+import PressableCard from '../../components/ui/PressableCard';
+
+// 🚀 LA CONSTANTE MAESTRA DE TU STORAGE
+const STORAGE_BASE_URL = "https://xvkmfnkzbllpqbwvkudi.supabase.co/storage/v1/object/public/video-ejercicios/";
 
 export default function ExerciseDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  
   const [ejercicio, setEjercicio] = useState<any | null>(null);
   const [historial, setHistorial] = useState({ max_peso: 0, ultima_vez: null, total_sesiones: 0 });
   const [cargando, setCargando] = useState(true);
   const [series, setSeries] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  
+  // 🚀 NUEVO ESTADO: Para guardar la URL final construida
+  const [videoUri, setVideoUri] = useState<string | null>(null);
 
-  useEffect(() => { cargarDatosCompletos(); }, [id]);
+  useEffect(() => { 
+    cargarDatosCompletos(); 
+  }, [id]);
 
   const cargarDatosCompletos = async () => {
     try {
       setCargando(true);
+      
+      // 1. Obtener la sesión actual
       const { data: { user } } = await supabase.auth.getUser();
+      let carpetaGenero = "hombres"; // Default / Fallback (inge su)
+
+      // 2. 🚀 MAGIA: Si hay usuario, ir a la tabla USUARIOS y preguntar su género
+      if (user) {
+        const { data: userData } = await supabase
+          .from('USUARIOS')
+          .select('genero_id')
+          .eq('id', user.id)
+          .single();
+
+        // Si es 2 (Mujer), cambiamos la carpeta. Si es 1 o cualquier otra cosa, se queda en hombres.
+        if (userData && userData.genero_id === 2) {
+          carpetaGenero = "mujeres";
+        }
+      }
+
+      // 3. Obtener los datos del ejercicio
       const { data: ejData } = await supabase.from('EJERCICIOS').select('*').eq('id', id).single();
       setEjercicio(ejData);
 
+      // 4. 🚀 CONSTRUIR LA URL DEL VIDEO
+      if (ejData && ejData.video_url) {
+        // Ejemplo final: https://.../video-ejercicios/mujeres/abs/Sit-ups.mp4
+        const fullUrl = `${STORAGE_BASE_URL}${carpetaGenero}/${ejData.video_url}`;
+        setVideoUri(fullUrl);
+      }
+
+      // 5. Cargar historial
       if (user && ejData) {
-        const { data: histData } = await supabase.from('HISTORIAL_EJERCICIOS').select('series_json, HISTORIAL_SESIONES(fecha)').eq('ejercicio_id', id).order('created_at', { ascending: false });
+        const { data: histData } = await supabase
+          .from('HISTORIAL_EJERCICIOS')
+          .select('series_json, HISTORIAL_SESIONES(fecha)')
+          .eq('ejercicio_id', id)
+          .order('created_at', { ascending: false });
+          
         if (histData && histData.length > 0) {
           let maxKg = 0;
-          histData.forEach(sesion => { (sesion.series_json as any[])?.forEach(serie => { if (serie.completed && serie.kg > maxKg) maxKg = serie.kg; }); });
-          setHistorial({ max_peso: maxKg, ultima_vez: histData[0].HISTORIAL_SESIONES?.[0]?.fecha || null, total_sesiones: histData.length });
+          histData.forEach(sesion => { 
+            (sesion.series_json as any[])?.forEach(serie => { 
+              if (serie.completed && serie.kg > maxKg) maxKg = serie.kg; 
+            }); 
+          });
+          setHistorial({ 
+            max_peso: maxKg, 
+            ultima_vez: histData[0].HISTORIAL_SESIONES?.[0]?.fecha || null, 
+            total_sesiones: histData.length 
+          });
         }
       }
-    } catch (e) { console.error(e); } finally { setCargando(false); }
+    } catch (e) { 
+      console.error(e); 
+    } finally { 
+      setCargando(false); 
+    }
   };
 
-  const player = useVideoPlayer(ejercicio?.video_url ?? null, (p) => { p.loop = true; p.addListener('playingChange', (payload) => setIsPlaying(payload.isPlaying)); });
+  // 🚀 El reproductor ahora escucha "videoUri" en lugar del raw "ejercicio.video_url"
+  const player = useVideoPlayer(videoUri, (p) => { 
+    p.loop = true; 
+    p.addListener('playingChange', (payload) => setIsPlaying(payload.isPlaying)); 
+  });
 
   if (cargando) return <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!ejercicio) return <View style={s.center}><Text style={{color: '#fff'}}>No encontrado</Text></View>;
@@ -56,7 +111,8 @@ export default function ExerciseDetail() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         <View style={s.videoWrapper}>
-          {ejercicio.video_url ? (
+          {/* Usamos videoUri para saber si hay video renderizable */}
+          {videoUri ? (
             <View style={s.video}>
               <VideoView style={s.video} player={player} allowsFullscreen={false} contentFit="cover" nativeControls={false} />
               <TouchableOpacity style={StyleSheet.absoluteFillObject} activeOpacity={1} onPress={() => isPlaying ? player.pause() : player.play()}>
@@ -66,7 +122,6 @@ export default function ExerciseDetail() {
           ) : (
             <View style={s.videoPlaceholder}><Ionicons name="barbell-outline" size={60} color={colors.border} /></View>
           )}
-          {/* El botón de back sobre el video se queda como TouchableOpacity por estándar de UI */}
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}><Ionicons name="chevron-down" size={28} color="#fff" /></TouchableOpacity>
         </View>
 
@@ -74,16 +129,8 @@ export default function ExerciseDetail() {
           <View style={s.titleRow}>
             <View style={{flex: 1}}>
               <Text style={s.nombre}>{ejercicio.nombre}</Text>
-              <Text style={s.subtitle}>Enfoque: {ejercicio.musculo_id === 15 ? 'Cardio' : 'Hipertrofia'}</Text>
+              <Text style={s.subtitle}>Enfoque: {ejercicio.musculo_id === 15 ? 'Cardio' : 'Fuerza'}</Text>
             </View>
-            
-            {/* 🚀 TODO (V2): Descomentar para mostrar el badge PRO cuando implementes los pagos */}
-            {/* {ejercicio.es_premium && (
-              <LinearGradient colors={[colors.warning, '#D97706']} style={s.proBadge}>
-                <Text style={s.proText}>PRO</Text>
-              </LinearGradient>
-            )} */}
-
           </View>
 
           <View style={s.statsRow}>
@@ -101,7 +148,6 @@ export default function ExerciseDetail() {
             <Text style={s.practiceDesc}>Marca las series para validar tu forma</Text>
             <View style={s.seriesRow}>
               {[1, 2, 3].map((num) => (
-                // 🚀 Cambiado a PressableCard
                 <PressableCard 
                   key={num} 
                   style={[s.serieCircle, series >= num && s.serieCircleActive]} 
@@ -116,7 +162,6 @@ export default function ExerciseDetail() {
       </ScrollView>
 
       <View style={s.footer}>
-        {/* 🚀 Cambiado a PressableCard para el botón principal de abajo */}
         <PressableCard style={buttons.primary} onPress={() => router.back()}>
           <Text style={buttons.primaryText}>ENTENDIDO</Text>
         </PressableCard>
@@ -137,8 +182,6 @@ const s = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 20 },
   nombre: { ...typography.h1, textTransform: 'uppercase' },
   subtitle: { ...typography.small, marginTop: 4 },
-  proBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 },
-  proText: { ...typography.caption, color: '#000' },
   statsRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, padding: 15, marginBottom: 25, borderWidth: 1, borderColor: colors.border },
   statBox: { flex: 1, alignItems: 'center' },
   statLabel: { ...typography.caption, marginBottom: 4 },
