@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, 
   StatusBar, TextInput, ActivityIndicator, Keyboard, ScrollView 
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router'; // 🚀 FIX: Importamos useLocalSearchParams
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -11,8 +11,9 @@ import * as Haptics from 'expo-haptics';
 import { supabase } from '../../lib/supabase';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 
+// 🚀 FIX: Añadimos equipo_id a la interfaz
 interface Ejercicio {
-  id: string; nombre: string; musculo_id: number; es_premium: boolean; nivel_id: number;
+  id: string; nombre: string; musculo_id: number; es_premium: boolean; nivel_id: number; equipo_id: number;
 }
 
 const MUSCULOS: Record<number, string> = {
@@ -32,10 +33,18 @@ export default function ExercisesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   
+  // 🚀 FIX: Leemos el parámetro de la URL
+  const { equipo } = useLocalSearchParams<{ equipo?: string }>();
+  
   const [ejercicios, setEjercicios] = useState<Ejercicio[]>([]);
   const [cargando, setCargando] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMuscle, setSelectedMuscle] = useState<number | null>(null);
+  
+  // 🚀 FIX: Estado para el filtro de equipo (inicializado con la URL)
+  const [selectedEquipo, setSelectedEquipo] = useState<number | null>(
+    equipo ? parseInt(equipo, 10) : null
+  );
 
   useEffect(() => { cargarEjercicios(); }, []);
 
@@ -52,13 +61,17 @@ export default function ExercisesScreen() {
   const filtrados = useMemo(() => {
     return ejercicios.filter(ej => {
       const matchMuscle = selectedMuscle ? ej.musculo_id === selectedMuscle : true;
+      // 🚀 FIX: Validamos que el ejercicio coincida con el equipo seleccionado (si hay alguno)
+      const matchEquipo = selectedEquipo ? ej.equipo_id === selectedEquipo : true;
       const matchSearch = searchQuery 
         ? ej.nombre.toLowerCase().includes(searchQuery.toLowerCase()) || 
           (MUSCULOS[ej.musculo_id] || '').toLowerCase().includes(searchQuery.toLowerCase())
         : true;
-      return matchMuscle && matchSearch;
+        
+      // 🚀 FIX: Incluimos matchEquipo en el retorno
+      return matchMuscle && matchEquipo && matchSearch;
     });
-  }, [ejercicios, selectedMuscle, searchQuery]);
+  }, [ejercicios, selectedMuscle, selectedEquipo, searchQuery]); // 🚀 FIX: Dependencia actualizada
 
   const handleSelectMuscle = (id: number | null) => {
     Haptics.selectionAsync();

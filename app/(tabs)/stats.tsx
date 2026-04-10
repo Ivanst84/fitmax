@@ -21,7 +21,8 @@ export default function StatsScreen() {
     Haptics.selectionAsync();
     setEquipoSeleccionado(id);
     setTimeout(() => {
-      router.push(`/(tabs)/exercises?equipo=${id}`);
+      // 🚀 FIX: Usamos navigate en lugar de push para no ensuciar el stack de las Tabs
+      router.navigate(`/(tabs)/exercises?equipo=${id}`);
       setEquipoSeleccionado(null);
     }, 200);
   };

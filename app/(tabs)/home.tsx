@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, StatusBar, ActivityIndicator, ScrollView, Alert, TouchableOpacity, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -12,6 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { supabase } from '../../lib/supabase'; 
 import PressableCard from '../../components/ui/PressableCard';
 import { processOfflineQueue } from '../../lib/offlineQueue';
+
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -69,7 +70,7 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
-const sincronizarHome = async () => {
+      const sincronizarHome = async () => {
         if (!session?.user?.id) return;
         setCargandoStats(true);
         
@@ -84,22 +85,18 @@ const sincronizarHome = async () => {
 
         if (isActive) setCargandoStats(false);
       };
-     
-
+      
       sincronizarHome();
 
       return () => { isActive = false; };
     }, [session?.user?.id])
-  
-  
-  
-  
   );
 
-  const getInitials = () => {
+  // 🚀 FIX: getInitials ahora está memoizado para evitar recalcular en cada render
+  const initials = useMemo(() => {
     const fullNameStr = session?.user?.user_metadata?.full_name || session?.user?.email || 'U';
     return fullNameStr.substring(0, 2).toUpperCase();
-  };
+  }, [session?.user]);
 
   // ============================================================================
   // 🧠 LÓGICA DE EVOLUCIÓN (14 DÍAS) - BLINDADA Y CON LOGS
@@ -236,7 +233,7 @@ const sincronizarHome = async () => {
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={{ width: '100%', height: '100%', borderRadius: 50 }} />
             ) : (
-              <Text style={styles.avatarText}>{getInitials()}</Text>
+              <Text style={styles.avatarText}>{initials}</Text>
             )}
           </PressableCard>
         </View>
@@ -280,12 +277,13 @@ const sincronizarHome = async () => {
               </View>
             </View>
 
-            {/* 🔥 BOTÓN PARA PRUEBAS (En producción cambiar a coachData.plateau_detectado) */}
+            {/* 🔥 BOTÓN DE EVOLUCIÓN CON PRESSABLECARD */}
             {coachData.plateau_detectado && (
-              <TouchableOpacity 
+              <PressableCard 
                 style={styles.evolveBtn}
                 onPress={handleRegenerarRutina}
                 disabled={evolucionando}
+                haptic="heavy"
               >
                 {evolucionando ? (
                   <ActivityIndicator color="#000" size="small" />
@@ -295,7 +293,7 @@ const sincronizarHome = async () => {
                     <Ionicons name="trending-up" size={16} color="#000" />
                   </>
                 )}
-              </TouchableOpacity>
+              </PressableCard>
             )}
 
           </PressableCard>

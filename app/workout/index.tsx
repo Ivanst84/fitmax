@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from 'react';
 import {
   View, Text, ScrollView, TextInput,
-  Alert, StatusBar, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, Modal
+  Alert, StatusBar, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, Modal, TouchableOpacity
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,7 +13,7 @@ import * as Sharing from 'expo-sharing';
 
 import PressableCard from '../../components/ui/PressableCard';
 import SessionReportCard from '../../components/ui/SessionReportCard';
-import GhostTracker from '../../components/ui/GhostTracker'; // 👈 APAGADO TEMPORALMENTE
+import GhostTracker from '../../components/ui/GhostTracker';
 
 import { colors, spacing, radius, typography, buttons } from '../../constants/theme';
 import { useRoutineDetail } from '../../hooks/useRoutineDetail';
@@ -42,25 +42,21 @@ const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESI
 });
 
 const RestTimerIsland = ({ initialSeconds, onFinish, onSkip }: { initialSeconds: number, onFinish: () => void, onSkip: () => void }) => {
-  // 🛡️ Marcamos exactamente en qué milisegundo debe terminar el descanso
   const endTimeRef = useRef(Date.now() + initialSeconds * 1000);
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
 
   useEffect(() => {
-    // Polling cada 500ms para asegurar fluidez y capturar el despertar del background
     const interval = setInterval(() => {
       const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
-
       if (remaining <= 0) {
         clearInterval(interval);
-        onFinish(); // Ejecutamos la acción final
+        onFinish(); 
         return;
       }
       setSecondsLeft(remaining);
     }, 500); 
-
     return () => clearInterval(interval);
-  }, [onFinish]); // 👈 Escuchamos onFinish para evitar cierres obsoletos (stale closures)
+  }, [onFinish]); 
 
   return (
     <View style={s.restCard}>
@@ -102,9 +98,6 @@ export default function WorkoutSessionScreen() {
   const timerRef = useRef<TimerHandle>(null);
   const viewShotRef = useRef<ViewShot>(null);
 
-  // ============================================================================
-  // ⚡ FIX DE RENDIMIENTO: Selector Granular con useMemo (Elimina el useEffect)
-  // ============================================================================
   const currentSetsMemo = useMemo(() => {
     if (!currentExercise) return [];
     return setsData[currentExercise.id] || [];
@@ -115,7 +108,6 @@ export default function WorkoutSessionScreen() {
     const firstIncomplete = currentSetsMemo.findIndex((s: any) => !s.completed);
     return firstIncomplete === -1 ? currentSetsMemo.length - 1 : firstIncomplete;
   }, [currentSetsMemo]);
-  // ============================================================================
 
   const formatTime = (sec: number) => { const m = Math.floor(sec / 60); const s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
@@ -125,6 +117,17 @@ export default function WorkoutSessionScreen() {
         { text: 'Cancelar', style: 'cancel' },
         { text: 'Sí, cambiar', onPress: () => swapExercise && swapExercise(currentExercise.id, regresionId) },
     ]);
+  };
+
+  // 🚀 FIX: AUTO-FILL EN CASCADA
+  const handleCascadeUpdate = (startIndex: number, field: 'kg' | 'reps', val: string) => {
+    if (!currentExercise) return;
+    // Si edito el set 1, le copio el valor al set 2 y 3 (siempre que no estén ya completados)
+    currentSetsMemo.forEach((set, i) => {
+      if (i >= startIndex && !set.completed) {
+        updateSetData(currentExercise.id, i, field, val);
+      }
+    });
   };
 
   const generarMensajeIA = async (volumen: number, series: number, tiempoStr: string, kcal: number) => {
@@ -140,7 +143,7 @@ export default function WorkoutSessionScreen() {
     } catch (error) { setAiMessage(`¡Eres una máquina! A descansar y crecer.`); } finally { setCargandoIA(false); }
   };
 
-const handleFinish = () => {
+  const handleFinish = () => {
     let setsCalculados = 0;
     ejerciciosActivos.forEach((ex: any) => { (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) setsCalculados++; }); });
 
@@ -162,12 +165,9 @@ const handleFinish = () => {
               ejerciciosActivos.forEach((ex: any) => { 
                 (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) { volCalculado += (parseFloat(s.kg) || 0) * (parseInt(s.reps) || 0); repsTotales += parseInt(s.reps) || 0; } }); });
 
-              // 🧠 ------------------------------------------------------------
-              // INICIO DE LA MAGIA FITMAX: CÁLCULO CIENTÍFICO
-              // ---------------------------------------------------------------
               let caloriasReales = 10; 
-              const { data: { user } } = await supabase.auth.getUser();
-              
+              const { data: { session } } = await supabase.auth.getSession();
+              const user = session?.user;
 
               if (user) {
                 const { data: kcalData, error: kcalError } = await supabase.rpc('calcular_calorias_sesion', {
@@ -175,7 +175,6 @@ const handleFinish = () => {
                   p_duracion_seg: tiempoFinalSegundos,
                   p_volumen_total: volCalculado,
                   p_total_reps: repsTotales 
-                  
                 });
 
                 if (!kcalError && kcalData) {
@@ -186,9 +185,6 @@ const handleFinish = () => {
                   caloriasReales = minutos > 1 ? Math.round(minutos * 5) : 10;
                 }
               }
-              // ---------------------------------------------------------------
-              // FIN DE LA MAGIA
-              // ---------------------------------------------------------------
 
               setWorkoutStats({ volume: volCalculado, sets: setsCalculados, finalTimeStr: tiempoFinalStr });
               
@@ -209,6 +205,7 @@ const handleFinish = () => {
       ]
     );
   };
+
   const shareWorkout = async () => {
     try {
       if (viewShotRef.current && viewShotRef.current.capture) {
@@ -231,7 +228,6 @@ const handleFinish = () => {
 
   if (cargando || !currentExercise) return <View style={s.center}><ActivityIndicator color={colors.primary} size="large" /></View>;
 
-  // 🚀 FIX: Usamos nuestro currentSetsMemo hiper-optimizado en lugar de extraerlo de setsData de nuevo
   const currentSets = currentSetsMemo;
   const equipoId = currentExercise.ejercicio.equipo_id;
   const esPesoCorporal = [1, 3, 9, 10].includes(equipoId);
@@ -322,7 +318,9 @@ const handleFinish = () => {
                       <TextInput
                         style={[s.input, set.completed && s.inputCompleted]}
                         keyboardType="numeric" placeholder="0" placeholderTextColor={colors.textMuted}
-                        value={set.kg?.toString()} onChangeText={(val) => updateSetData(currentExercise.id, index, 'kg', val)} editable={!set.completed}
+                        value={set.kg?.toString()} 
+                        onChangeText={(val) => handleCascadeUpdate(index, 'kg', val)} 
+                        editable={!set.completed}
                       />
                     </View>
                   )}
@@ -331,13 +329,21 @@ const handleFinish = () => {
                     <TextInput
                       style={[s.input, set.completed && s.inputCompleted]}
                       keyboardType="numeric" placeholder={String(currentExercise.repeticiones)} placeholderTextColor={colors.textMuted}
-                      value={set.reps?.toString()} onChangeText={(val) => updateSetData(currentExercise.id, index, 'reps', val)} editable={!set.completed}
+                      value={set.reps?.toString()} 
+                      onChangeText={(val) => handleCascadeUpdate(index, 'reps', val)} 
+                      editable={!set.completed}
                     />
                   </View>
                   
-                  <PressableCard style={[s.checkBtn, set.completed && s.checkBtnCompleted]} onPress={() => toggleSetComplete(currentExercise.id, index)}>
-                    <Ionicons name="checkmark" size={18} color={set.completed ? '#000' : colors.border} />
-                  </PressableCard>
+                  {/* 🚀 FIX: Aumentamos área táctil y altura mínima para evitar "Dedos Gordos" */}
+                  <TouchableOpacity 
+                    style={[s.checkBtn, set.completed && s.checkBtnCompleted]} 
+                    onPress={() => toggleSetComplete(currentExercise.id, index)}
+                    hitSlop={{ top: 15, bottom: 15, left: 10, right: 10 }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="checkmark" size={20} color={set.completed ? '#000' : colors.border} />
+                  </TouchableOpacity>
                 </View>
               );
             })}
@@ -364,13 +370,24 @@ const handleFinish = () => {
         </ScrollView>
       )}
 
-      <Modal visible={showTechGuide} animationType="slide" transparent={true}>
+      {/* 🚀 FIX: Modal ahora soporta gesto "Atrás" en Android (onRequestClose) */}
+      <Modal visible={showTechGuide} animationType="slide" transparent={true} onRequestClose={() => setShowTechGuide(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.modalContent, { paddingBottom: insets.bottom + 20 }]}>
+            
+            {/* 🚀 FIX: Cabecera reconstruida para que la "X" sea gigante y fácil de presionar */}
             <View style={s.modalHeader}>
               <View style={s.modalHandle} />
-              <PressableCard onPress={() => setShowTechGuide(false)} style={s.modalClose}><Ionicons name="close-circle" size={32} color={colors.textMuted} /></PressableCard>
+              <TouchableOpacity 
+                onPress={() => setShowTechGuide(false)} 
+                style={s.modalClose}
+                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close-circle" size={36} color={colors.textSecondary} />
+              </TouchableOpacity>
             </View>
+
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={s.modalTitle}>{currentExercise.ejercicio.nombre}</Text>
               <ExerciseGuideCard ejercicio={currentExercise.ejercicio} compact={true} />
@@ -460,9 +477,11 @@ const s = StyleSheet.create({
   ghostText: { flex: 1, ...typography.small, textAlign: 'center', fontStyle: 'italic' },
   setTextCompleted: { color: colors.primary, opacity: 0.6 },
   inputWrapper: { paddingHorizontal: 4 },
-  input: { backgroundColor: colors.surfaceLight, color: '#fff', borderRadius: radius.sm, paddingVertical: 10, textAlign: 'center', fontSize: 18, fontWeight: 'bold' },
+  // 🚀 FIX: minHeight subido a 48px para cumplir estándares táctiles
+  input: { backgroundColor: colors.surfaceLight, color: '#fff', borderRadius: radius.sm, paddingVertical: 10, textAlign: 'center', fontSize: 18, fontWeight: 'bold', minHeight: 48 },
   inputCompleted: { backgroundColor: 'transparent', color: colors.primary },
-  checkBtn: { flex: 0.5, height: 40, backgroundColor: colors.surfaceLight, borderRadius: radius.sm, justifyContent: 'center', alignItems: 'center' },
+  // 🚀 FIX: minHeight subido a 48px
+  checkBtn: { flex: 0.5, minHeight: 48, backgroundColor: colors.surfaceLight, borderRadius: radius.sm, justifyContent: 'center', alignItems: 'center' },
   checkBtnCompleted: { backgroundColor: colors.primary },
   restCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: colors.primaryFaded },
   restTitle: { ...typography.caption, color: colors.primary },
@@ -472,10 +491,11 @@ const s = StyleSheet.create({
   nextCard: { marginTop: spacing.md },
   prevLink: { marginTop: spacing.lg, alignItems: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#111', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, height: '80%' },
-  modalHeader: { height: 40, alignItems: 'center', justifyContent: 'center' },
+  modalContent: { backgroundColor: '#111', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, height: '85%' },
+  // 🚀 FIX: Header del modal reconstruido para el botón gigante
+  modalHeader: { height: 60, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   modalHandle: { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2 },
-  modalClose: { position: 'absolute', right: 0, top: 5 },
+  modalClose: { position: 'absolute', right: 0, top: 10, padding: 5, zIndex: 10 },
   modalTitle: { ...typography.h2, textTransform: 'uppercase', marginBottom: 20, textAlign: 'center' },
   savingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   savingText: { ...typography.caption, color: colors.primary, marginTop: 16 },

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  View, Text, StyleSheet, TouchableOpacity, 
-  ScrollView, ActivityIndicator, StatusBar, Alert, TextInput, KeyboardAvoidingView, Platform
+  View, Text, StyleSheet, ScrollView, ActivityIndicator, 
+  StatusBar, Alert, TextInput, KeyboardAvoidingView, Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useGeminiRoutine } from '../../hooks/useGeminiRoutine';
+
+// 🚀 FIX: Usaremos PressableCard en lugar de TouchableOpacity para consistencia
+import PressableCard from '../../components/ui/PressableCard';
 
 // 🧠 DEFINICIÓN DE LOS DÍAS DE LA SEMANA PARA EL NUEVO SELECTOR
 const DIAS_SEMANA = [
@@ -117,9 +120,6 @@ export default function OnboardingScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuario no encontrado');
 
-      // ======================================================================
-      // 🛡️ FILTROS CON TUS IDs REALES (Para ahorrar tokens y dinero)
-      // ======================================================================
       let query = supabase.from('EJERCICIOS').select('id, nombre');
 
       if (perfilFinal.equipo === 'casa') {
@@ -138,10 +138,8 @@ export default function OnboardingScreen() {
       console.log("🏋️ Ejercicios encontrados para mandar a Gemini:", catalogoDB?.length);
       if (errorCat || !catalogoDB) throw new Error('No se pudo cargar el catálogo filtrado');
       
-      // 2. Generar Plan con Gemini 
       const planFinal = await generateRoutine(perfilFinal, catalogoDB);
 
-      // 3. Bucle para guardar cada día en PARALELO
       await Promise.all(planFinal.map(async (dia: any, i: number) => {
         const diaSemanaReal = perfilFinal.dias_entrenamiento[i] || dia.dia_semana_sugerido;
 
@@ -183,7 +181,6 @@ export default function OnboardingScreen() {
         }
       }));
 
-      // 4. GUARDAR PERFIL FÍSICO Y FINALIZAR 
       const pesoFinal = parseFloat(perfilFinal.peso_kg) || 75;
       const alturaFinal = parseInt(perfilFinal.altura_cm) || 170;
 
@@ -207,9 +204,6 @@ export default function OnboardingScreen() {
       if (perfilFinal.edad === '46_mas') añoNacimiento = añoActual - 50;
       const fechaNacAprox = `${añoNacimiento}-01-01`;
 
-      // ======================================================================
-      // 🚨 FIX: FRENO DE MANO PARA ERRORES DE GUARDADO
-      // ======================================================================
       const { error: updateError } = await supabase.from('USUARIOS').upsert({
         id: user.id,
         email: user.email,
@@ -222,7 +216,6 @@ export default function OnboardingScreen() {
         fecha_nacimiento: fechaNacAprox 
       });
 
-      // 🛑 Freno 1: Si falla la tabla USUARIOS, lanzamos el error y abortamos
       if (updateError) {
         throw new Error(`No pudimos guardar tu perfil: ${updateError.message}`);
       }
@@ -233,18 +226,16 @@ export default function OnboardingScreen() {
         fecha: new Date().toISOString()
       });
 
-      // 🛑 Freno 2: Si falla la tabla MEDIDAS, lanzamos el error y abortamos
       if (medidaError) {
         throw new Error(`No pudimos guardar tus medidas: ${medidaError.message}`);
       }
 
-      // ✅ Si todo salió bien, AHORA SÍ mandamos al usuario al Home
       await AsyncStorage.setItem(`onboarding_${user.id}`, 'true');
       router.replace('/(tabs)/home');
 
     } catch (e: any) {
       console.error('❌ FALLO TOTAL:', e.message);
-      Alert.alert('¡Ups!', e.message); // El usuario verá exactamente por qué falló
+      Alert.alert('¡Ups!', e.message); 
     } finally {
       setGenerando(false);
     }
@@ -263,7 +254,6 @@ export default function OnboardingScreen() {
     );
   }
 
-  // RENDERIZADO CONDICIONAL DE LOS PASOS CUSTOM
   const renderCustomStep = () => {
     if (infoPaso.type === 'input') {
       return (
@@ -278,10 +268,11 @@ export default function OnboardingScreen() {
             />
             <Text style={s.unitText}>{infoPaso.id === 'peso' ? 'kg' : 'cm'}</Text>
           </View>
-          <TouchableOpacity style={s.continueBtn} onPress={handleCustomNext}>
+          {/* 🚀 FIX: PressableCard en el botón Continuar */}
+          <PressableCard style={s.continueBtn} onPress={handleCustomNext}>
             <Text style={s.continueBtnText}>Continuar</Text>
             <Ionicons name="arrow-forward" size={20} color="#000" />
-          </TouchableOpacity>
+          </PressableCard>
         </View>
       );
     }
@@ -293,7 +284,8 @@ export default function OnboardingScreen() {
             {DIAS_SEMANA.map((dia) => {
               const isSelected = diasSeleccionados.includes(dia.id);
               return (
-                <TouchableOpacity
+                // 🚀 FIX: PressableCard en los selectores de días
+                <PressableCard
                   key={dia.id}
                   style={[s.dayBubble, isSelected && s.dayBubbleSelected]}
                   onPress={() => toggleDia(dia.id)}
@@ -301,18 +293,19 @@ export default function OnboardingScreen() {
                   <Text style={[s.dayBubbleText, isSelected && s.dayBubbleTextSelected]}>
                     {dia.label}
                   </Text>
-                </TouchableOpacity>
+                </PressableCard>
               );
             })}
           </View>
           <Text style={s.daysHelperText}>Has seleccionado {diasSeleccionados.length} días</Text>
-          <TouchableOpacity 
+          {/* 🚀 FIX: PressableCard en el botón Final */}
+          <PressableCard 
             style={[s.continueBtn, diasSeleccionados.length < 2 && { opacity: 0.5 }]} 
             onPress={handleCustomNext}
           >
             <Text style={s.continueBtnText}>Crear mi Rutina</Text>
             <Ionicons name="arrow-forward" size={20} color="#000" />
-          </TouchableOpacity>
+          </PressableCard>
         </View>
       );
     }
@@ -322,7 +315,10 @@ export default function OnboardingScreen() {
     <KeyboardAvoidingView style={[s.container, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={s.header}>
         {pasoActual > 0 && (
-          <TouchableOpacity onPress={volverAtras} style={s.backBtn}><Ionicons name="arrow-back" size={24} color="#fff" /></TouchableOpacity>
+          // 🚀 FIX: PressableCard en el botón de ir atrás
+          <PressableCard onPress={volverAtras} style={s.backBtn}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </PressableCard>
         )}
         <View style={s.progressContainer}>
           <View style={[s.progressBar, { width: `${((pasoActual + 1) / totalPasos) * 100}%` }]} />
@@ -339,7 +335,8 @@ export default function OnboardingScreen() {
         {infoPaso.custom ? renderCustomStep() : (
           <View style={s.optionsContainer}>
             {infoPaso.opciones?.map((op) => (
-              <TouchableOpacity
+              // 🚀 FIX: PressableCard en las tarjetas de opciones principales
+              <PressableCard
                 key={op.id}
                 style={[s.card, respuestas[infoPaso.id] === op.id && s.cardSelected]}
                 onPress={() => handleSelect(op.id)}
@@ -351,7 +348,7 @@ export default function OnboardingScreen() {
                   <Text style={[s.cardLabel, respuestas[infoPaso.id] === op.id && {color: colors.primary}]}>{op.label}</Text>
                   <Text style={s.cardDesc}>{op.desc}</Text>
                 </View>
-              </TouchableOpacity>
+              </PressableCard>
             ))}
           </View>
         )}
@@ -383,7 +380,6 @@ const s = StyleSheet.create({
   bigInput: { color: '#fff', fontSize: 72, fontWeight: '900', borderBottomWidth: 2, borderBottomColor: colors.primary, textAlign: 'center', minWidth: 120 },
   unitText: { color: '#666', fontSize: 24, marginLeft: 10, marginBottom: 15 },
   
-  // 🔥 ESTILOS NUEVOS PARA EL SELECTOR DE DÍAS
   daysRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 20, marginTop: 10 },
   dayBubble: { width: 55, height: 55, borderRadius: 30, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#1A1A1A' },
   dayBubbleSelected: { backgroundColor: colors.primary, borderColor: colors.primary },

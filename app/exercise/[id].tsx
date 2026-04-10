@@ -27,7 +27,7 @@ export default function ExerciseDetail() {
   const [series, setSeries] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   
-  // 🚀 NUEVO ESTADO: Para guardar la URL final construida
+  // 🚀 ESTADO: Para guardar la URL final construida
   const [videoUri, setVideoUri] = useState<string | null>(null);
 
   useEffect(() => { 
@@ -40,9 +40,9 @@ export default function ExerciseDetail() {
       
       // 1. Obtener la sesión actual
       const { data: { user } } = await supabase.auth.getUser();
-      let carpetaGenero = "hombres"; // Default / Fallback (inge su)
+      let carpetaGenero = "hombres"; // Default / Fallback
 
-      // 2. 🚀 MAGIA: Si hay usuario, ir a la tabla USUARIOS y preguntar su género
+      // 2. Si hay usuario, preguntar su género
       if (user) {
         const { data: userData } = await supabase
           .from('USUARIOS')
@@ -50,7 +50,6 @@ export default function ExerciseDetail() {
           .eq('id', user.id)
           .single();
 
-        // Si es 2 (Mujer), cambiamos la carpeta. Si es 1 o cualquier otra cosa, se queda en hombres.
         if (userData && userData.genero_id === 2) {
           carpetaGenero = "mujeres";
         }
@@ -60,9 +59,8 @@ export default function ExerciseDetail() {
       const { data: ejData } = await supabase.from('EJERCICIOS').select('*').eq('id', id).single();
       setEjercicio(ejData);
 
-      // 4. 🚀 CONSTRUIR LA URL DEL VIDEO
+      // 4. CONSTRUIR LA URL DEL VIDEO
       if (ejData && ejData.video_url) {
-        // Ejemplo final: https://.../video-ejercicios/mujeres/abs/Sit-ups.mp4
         const fullUrl = `${STORAGE_BASE_URL}${carpetaGenero}/${ejData.video_url}`;
         setVideoUri(fullUrl);
       }
@@ -96,11 +94,27 @@ export default function ExerciseDetail() {
     }
   };
 
-  // 🚀 El reproductor ahora escucha "videoUri" en lugar del raw "ejercicio.video_url"
+  // 🚀 FIX: Inicialización limpia del player sin listeners infinitos
   const player = useVideoPlayer(videoUri, (p) => { 
     p.loop = true; 
-    p.addListener('playingChange', (payload) => setIsPlaying(payload.isPlaying)); 
   });
+
+  // 🚀 FIX: Ciclo de vida estricto para evitar Memory Leaks
+// 🚀 FIX: Ciclo de vida estricto para evitar Memory Leaks
+  useEffect(() => {
+    if (!player) return;
+
+    // Agregamos el listener
+    const subscription = player.addListener('playingChange', (payload) => {
+      setIsPlaying(payload.isPlaying);
+    });
+
+    // Cleanup function: Se ejecuta al desmontar el componente
+    return () => {
+      subscription.remove(); // Matamos el listener
+      // ❌ AQUÍ YA NO HAY NADA MÁS. NADA DE PLAYER.PAUSE()
+    };
+  }, [player]);
 
   if (cargando) return <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!ejercicio) return <View style={s.center}><Text style={{color: '#fff'}}>No encontrado</Text></View>;
@@ -111,7 +125,6 @@ export default function ExerciseDetail() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
         <View style={s.videoWrapper}>
-          {/* Usamos videoUri para saber si hay video renderizable */}
           {videoUri ? (
             <View style={s.video}>
               <VideoView style={s.video} player={player} allowsFullscreen={false} contentFit="cover" nativeControls={false} />
