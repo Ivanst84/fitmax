@@ -2,7 +2,7 @@ import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshCon
 import { useState, useEffect, useCallback } from 'react';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router'; // 🚀 IMPORTAMOS EL ROUTER
+import { useRouter } from 'expo-router'; // 
 import { supabase } from '../../lib/supabase';
 // 🚀 Importamos el Theme y los Botones
 import { colors, spacing, radius, typography, buttons } from '../../constants/theme';
@@ -71,7 +71,6 @@ export default function HistoryScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
         >
           {sesiones.length === 0 ? (
-            // 🚀 EMPTY STATE PREMIUM CON CALL TO ACTION (CTA)
             <View style={styles.emptyContainer}>
               <View style={styles.emptyIconBox}>
                 <Ionicons name="trophy-outline" size={56} color={colors.primary} />

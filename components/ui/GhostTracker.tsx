@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native'; // 👈 Usamos el Animated nativo normal
+import { View, Text, StyleSheet, Animated } from 'react-native'; 
 import * as Haptics from 'expo-haptics';
 import { colors, spacing, radius } from '../../constants/theme';
 
@@ -50,7 +50,6 @@ export default function GhostTracker({
   const userRepsNum = toNum(currentReps);
   const userVol     = setVolume(userKgNum, userRepsNum);
 
-  // 🚀 Usamos el motor nativo de React Native, súper estable
   const ghostBarAnim = useRef(new Animated.Value(100)).current;
   const userBarAnim  = useRef(new Animated.Value(ghostVol > 0 ? safePct(userVol, ghostVol) : 0)).current;
   
@@ -64,10 +63,9 @@ export default function GhostTracker({
     const newUserPct  = safePct(userVol, maxVol);
     const isBeating = userVol > ghostVol && userVol > 0;
 
-    // Animamos las barras de forma nativa
     Animated.spring(ghostBarAnim, {
       toValue: newGhostPct,
-      useNativeDriver: false, // El ancho no usa el driver nativo en RN clásico
+      useNativeDriver: false, 
       friction: 8
     }).start();
 
@@ -77,21 +75,43 @@ export default function GhostTracker({
       friction: 8
     }).start();
 
-    // Haptic Feedback
-    if (isBeating && !hasBeatRef.current) {
+    if (isBeating && !hasBeatRef.current && !isCompleted) {
       hasBeatRef.current = true;
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } else if (!isBeating && hasBeatRef.current) {
       hasBeatRef.current = false;
     }
-  }, [currentKg, currentReps, setIndex,ghostVol]);
+  }, [currentKg, currentReps, setIndex, ghostVol, isCompleted]);
 
-  if (ghostVol <= 0 || isCompleted) return null;
+  // 🚀 FIX UX 3: ESTADO CONGELADO EN LUGAR DE DESAPARECER ABRUPTAMENTE
+  if (ghostVol <= 0) return null;
 
   const delta = deltaPct(userVol, ghostVol);
   const isBeating = userVol > ghostVol && userVol > 0;
   const isLosing  = userVol < ghostVol && userVol > 0;
 
+  // Si ya se completó el set, mostramos el "ticket" de victoria/resumen
+  if (isCompleted) {
+    return (
+      <View style={[s.container, { opacity: 0.6, borderColor: isBeating ? 'rgba(34, 197, 94, 0.3)' : '#1A1A1A' }]}>
+        <View style={s.headerRow}>
+          <View style={s.labelGroup}>
+            <View style={[s.ghostDot, { backgroundColor: isBeating ? colors.success : colors.textMuted }]} />
+            <Text style={[s.ghostLabel, { color: isBeating ? colors.success : colors.textMuted }]}>
+              {isBeating ? '¡RÉCORD SUPERADO!' : 'SET COMPLETADO'}
+            </Text>
+          </View>
+          {delta !== null && (
+            <Text style={[s.deltaText, isBeating ? s.deltaTextWin : { color: colors.textMuted }]}>
+              {isBeating ? `+${delta}%` : `${delta}%`}
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  // Estado normal (en progreso)
   return (
     <View style={s.container}>
       <View style={s.headerRow}>

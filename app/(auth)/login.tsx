@@ -23,13 +23,11 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  // 🚀 Extractor blindado de parámetros de URL
   const extractParamsFromUrl = (url: string) => {
     // Sacamos todo lo que esté después de un '?' o un '#'
     const query = url.split('?')[1] || '';
     const hash = url.split('#')[1] || '';
     
-    // Lo unimos y usamos URLSearchParams (gracias a nuestro polyfill) para leerlo fácil
     const params = new URLSearchParams(`${query}&${hash}`);
     
     return {
@@ -62,7 +60,6 @@ export default function LoginScreen() {
 
         if (result.type === 'success' && result.url) {
           
-          // 1. Usamos nuestra función blindada para buscar las llaves donde sea que estén
           const { accessToken, refreshToken, code } = extractParamsFromUrl(result.url);
 
           // 2. Escenario A: Supabase nos mandó los tokens directos (Implicit Flow)
@@ -75,7 +72,6 @@ export default function LoginScreen() {
             
             router.replace('/(tabs)/home'); // ¡Victoria!
           } 
-          // 3. Escenario B: Supabase nos mandó un código (PKCE Flow)
           else if (code) {
             const { error: sessionError } = await supabase.auth.exchangeCodeForSession(code);
             if (sessionError) throw sessionError;
@@ -108,7 +104,6 @@ export default function LoginScreen() {
         <Text style={s.tagline}>Tu entrenamiento. Tu ritmo.</Text>
       </View>
 
-      {/* Features */}
       <View style={s.features}>
         {[
           { icon: 'barbell', text: 'Rutinas personalizadas para tu nivel' },

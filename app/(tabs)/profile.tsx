@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, StatusBar, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, StatusBar, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
-import { useStreak } from '../../hooks/useStreak'; // 👈 Nuestro nuevo cerebro de racha
+import { useStreak } from '../../hooks/useStreak';
 import { supabase } from '../../lib/supabase';
 import PressableCard from '../../components/ui/PressableCard';
+import CustomAlert from '../../components/ui/CustomAlert'; // 
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -19,6 +20,19 @@ export default function ProfileScreen() {
   
   const [isSyncing, setIsSyncing] = useState(false);
   
+  const [alertData, setAlertData] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'info' | 'success' | 'warning' | 'destructive';
+    confirmText?: string;
+    onConfirm: () => void;
+  }>({
+    visible: false, title: '', message: '', type: 'info', onConfirm: () => {}
+  });
+
+  const closeAlert = () => setAlertData(prev => ({ ...prev, visible: false }));
+
   const fullName = session?.user?.user_metadata?.full_name || 'Atleta FitMax';
   const initials = fullName
     .split(' ')
@@ -27,36 +41,52 @@ export default function ProfileScreen() {
     .substring(0, 2)
     .toUpperCase();
 
-  const handleLogout = async () => { 
-    await supabase.auth.signOut();
-    router.replace('/(auth)/login'); 
+  const handleLogout = () => {
+    setAlertData({
+      visible: true,
+      title: '¿Cerrar Sesión?',
+      message: 'Tendrás que volver a iniciar sesión la próxima vez.',
+      type: 'warning',
+      confirmText: 'Sí, salir',
+      onConfirm: async () => {
+        closeAlert();
+        await supabase.auth.signOut();
+        router.replace('/(auth)/login');
+      }
+    });
   };
 
+  // 🚀 REEMPLAZO 2: Alerta Premium para Borrar Cuenta
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "⚠️ ¿Borrar cuenta?",
-      "Esto borrará todo tu perfil, rutinas y datos de la base de datos para siempre.",
-      [
-        { text: "Cancelar", style: "cancel" },
-        { 
-          text: "Sí, Borrar Todo", 
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const { error } = await supabase.rpc('delete_user_account');
-              if (error) throw error;
-              await supabase.auth.signOut();
-              router.replace('/'); 
-            } catch (error: any) {
-              Alert.alert("Error", error.message);
-            }
-          }
+    setAlertData({
+      visible: true,
+      title: ' ¿Borrar cuenta?',
+      message: 'Esto borrará todo tu perfil, rutinas y datos de la base de datos para siempre. Esta acción no se puede deshacer.',
+      type: 'destructive',
+      confirmText: 'Sí, Borrar Todo',
+      onConfirm: async () => {
+        closeAlert();
+        try {
+          const { error } = await supabase.rpc('delete_user_account');
+          if (error) throw error;
+          await supabase.auth.signOut();
+          router.replace('/'); 
+        } catch (error: any) {
+          // Si falla, mostramos OTRA alerta premium de error
+          setTimeout(() => {
+            setAlertData({
+              visible: true,
+              title: 'Error al borrar',
+              message: error.message,
+              type: 'destructive',
+              confirmText: 'Entendido',
+              onConfirm: closeAlert
+            });
+          }, 500); 
         }
-      ]
-    );
+      }
+    });
   };
-
-
 
   return (
     <View style={s.container}>
@@ -73,7 +103,6 @@ export default function ProfileScreen() {
           <PressableCard style={s.editBtn} onPress={() => router.push('/edit-profile')}>
             <Text style={s.editBtnText}>Editar Perfil</Text>
           </PressableCard>
-
         </View>
 
         {/* RENDIMIENTO */}
@@ -104,7 +133,6 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* STATS ROW ACTUALIZADO CON RACHA REAL */}
         <View style={s.statsRow}>
           <View style={s.statCard}>
             <Ionicons name="flame" size={24} color={rachaActual > 0 ? colors.primary : colors.textMuted} />
@@ -145,11 +173,17 @@ export default function ProfileScreen() {
           <View style={s.dangerZone}>
             <Text style={s.dangerTitle}>ZONA DE PELIGRO</Text>
             <MenuOption icon="log-out-outline" label="Cerrar Sesión" onPress={handleLogout} danger />
-            <MenuOption icon="trash-outline" label="Borrar Cuenta (Prueba)" onPress={handleDeleteAccount} danger />
+            <MenuOption icon="trash-outline" label="Borrar Cuenta" onPress={handleDeleteAccount} danger />
           </View>
         </View>
 
       </ScrollView>
+
+      <CustomAlert 
+        {...alertData} 
+        onCancel={closeAlert} 
+      />
+
     </View>
   );
 }

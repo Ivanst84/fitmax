@@ -1,6 +1,7 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useEffect, useState, useRef } from 'react';import { View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -8,6 +9,7 @@ import { useAuth } from '../hooks/useAuth';
 import { colors } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+
 // Congelamos la pantalla de carga nativa
 SplashScreen.preventAutoHideAsync();
 
@@ -16,18 +18,22 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const [isReady, setIsReady] = useState(false);
-const hasNavigated = useRef(false);
-useEffect(() => {
+  
+  // 🚀 FIX: Cambiado de useRef a useState para que React gestione el estado en reinicios y modo estricto
+  const [hasNavigated, setHasNavigated] = useState(false);
+
+  // Reset cuando cambia la sesión
+  useEffect(() => {
     if (loading) return;
-    hasNavigated.current = false;
-  }, [session]);
+    setHasNavigated(false);
+  }, [session, loading]);
 
   useEffect(() => {
     // Si está cargando o ya navegamos en esta sesión, no hacemos nada
-    if (loading || hasNavigated.current) return;
+    if (loading || hasNavigated) return;
 
     const checkAuthAndOnboarding = async () => {
-      hasNavigated.current = true; // Bloqueamos re-ejecuciones
+      setHasNavigated(true); // Bloqueamos re-ejecuciones
       try {
         const inAuthGroup = segments[0] === '(auth)';
         const inOnboardingGroup = segments[0] === '(onboarding)';
@@ -70,7 +76,7 @@ useEffect(() => {
         }
       } catch (error) {
         console.error('❌ Error crítico en enrutamiento:', error);
-        hasNavigated.current = false; // Liberamos si hubo error
+        setHasNavigated(false); // Liberamos si hubo error
       } finally {
         setIsReady(true);
         await SplashScreen.hideAsync();
@@ -78,7 +84,7 @@ useEffect(() => {
     };
 
     checkAuthAndOnboarding();
-  }, [session, loading]); // 👈 Quitamos 'segments' de aquí
+  }, [session, loading, hasNavigated, router]); // 👈 FIX: Agregamos hasNavigated y router a las dependencias
 
   // Pantalla de seguridad mientras decide
   if (!isReady || loading) {

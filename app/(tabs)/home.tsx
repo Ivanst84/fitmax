@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, StatusBar, ActivityIndicator, ScrollView, Alert
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // 🚀 IMPORTANTE AÑADIDO
 
 import StreakWidget from '../../components/ui/StreakWidget';
 import { usePeriodization } from '../../hooks/usePeriodization';
@@ -30,8 +32,10 @@ export default function HomeScreen() {
   const [metaSesiones, setMetaSesiones] = useState(3);
   const [cargandoStats, setCargandoStats] = useState(true);
   
-  // 🔥 Estado para el botón de evolución
   const [evolucionando, setEvolucionando] = useState(false);
+
+  // 🚀 ESTADO PARA EL DÍA 0 (TICKET DORADO)
+  const [mostrarInauguracion, setMostrarInauguracion] = useState(false);
 
   useEffect(() => {
     if (coachData) {
@@ -39,7 +43,7 @@ export default function HomeScreen() {
     }
   }, [coachData]);
 
-  const fetchEstadisticas = async () => {
+  const fetchEstadisticas = useCallback(async () => {
     if (!session?.user?.id) return;
     try {
       const hoy = new Date();
@@ -62,11 +66,8 @@ export default function HomeScreen() {
     } catch (err) {
       console.error("Error cargando Home Stats:", err);
     }
-  };
+  }, [session?.user?.id]);
 
-  // ============================================================================
-  // ⚡ FIX DE RENDIMIENTO: PARALELISMO PURO (Promise.all)
-  // ============================================================================
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
@@ -74,8 +75,13 @@ export default function HomeScreen() {
         if (!session?.user?.id) return;
         setCargandoStats(true);
         
-        // 🚀 EL CAMIÓN RECOLECTOR PASA POR AQUÍ CADA QUE ABREN EL HOME
-        await processOfflineQueue(); 
+        processOfflineQueue().catch(console.warn); 
+
+        // 🚀 VERIFICAR SI TIENE EL TICKET DE INAUGURACIÓN PENDIENTE
+        const ticket = await AsyncStorage.getItem(`inauguracion_pendiente_${session.user.id}`);
+        if (ticket === 'true' && isActive) {
+          setMostrarInauguracion(true);
+        }
 
         await Promise.all([
           fetchEstadisticas(),
@@ -89,17 +95,30 @@ export default function HomeScreen() {
       sincronizarHome();
 
       return () => { isActive = false; };
-    }, [session?.user?.id])
+    }, [session?.user?.id, fetchEstadisticas, refetch, refetchCoach])
   );
 
-  // 🚀 FIX: getInitials ahora está memoizado para evitar recalcular en cada render
   const initials = useMemo(() => {
     const fullNameStr = session?.user?.user_metadata?.full_name || session?.user?.email || 'U';
     return fullNameStr.substring(0, 2).toUpperCase();
   }, [session?.user]);
 
+  // 🚀 LÓGICA PARA INICIAR LA RUTINA FANTASMA Y ROMPER EL TICKET
+  const iniciarMiniRutina = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    
+    if (session?.user?.id) {
+      // 1. Destruimos el ticket para que este banner no vuelva a salir jamás
+      await AsyncStorage.removeItem(`inauguracion_pendiente_${session.user.id}`);
+      setMostrarInauguracion(false);
+      
+      // 2. Lo mandamos a la ruta de la rutina de inauguración (Tendremos que crear este archivo después)
+      router.push('/inauguracion'); 
+    }
+  };
+
   // ============================================================================
-  // 🧠 LÓGICA DE EVOLUCIÓN (14 DÍAS) - BLINDADA Y CON LOGS
+  // 🧠 LÓGICA DE EVOLUCIÓN - FIX: OPTIMIZACIÓN N+1 (Batch Update)
   // ============================================================================
   const handleRegenerarRutina = async () => {
     try {
@@ -107,7 +126,6 @@ export default function HomeScreen() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuario no autenticado");
 
-      // 1. Traemos las rutinas y ejercicios ACTUALES
       const { data: rutinas, error: errRutinas } = await supabase
         .from('RUTINAS')
         .select('*, RUTINA_EJERCICIOS(*)')
@@ -115,56 +133,45 @@ export default function HomeScreen() {
 
       if (errRutinas || !rutinas) throw new Error("No se encontraron rutinas para evolucionar.");
 
-      // 2. Iteramos sobre cada rutina
-      for (const rutina of rutinas) {
-        
-        // A) Actualizamos el Título a Fase 2
+      const rutinasPromises = rutinas.map(rutina => {
         let nuevoNombre = rutina.nombre;
-        if (!nuevoNombre.includes('(Fase 2)')) {
-          nuevoNombre = `${nuevoNombre} (Fase 2)`;
-        }
+        if (!nuevoNombre.includes('(Fase 2)')) nuevoNombre = `${nuevoNombre} (Fase 2)`;
+        return supabase.from('RUTINAS').update({ nombre: nuevoNombre, nivel_id: 2 }).eq('id', rutina.id);
+      });
+      await Promise.all(rutinasPromises);
 
-        const { error: errUpdateRutina } = await supabase.from('RUTINAS')
-          .update({ nombre: nuevoNombre, nivel_id: 2 })
-          .eq('id', rutina.id);
-        
-        if (errUpdateRutina) console.error("❌ Error actualizando rutina:", errUpdateRutina.message);
+      const ejerciciosActualizados = rutinas.flatMap(rutina =>
+        rutina.RUTINA_EJERCICIOS
+          .filter((ej: any) => ej.es_calentamiento !== true && ej.es_calentamiento !== 'true')
+          .map((ej: any) => {
+            let nuevasSeries = parseInt(ej.series);
+            let nuevosDescansos = parseInt(ej.descanso_seg);
+            const objId = parseInt(rutina.objetivo_id);
 
-        // B) Actualizamos cada ejercicio
-        for (const ej of rutina.RUTINA_EJERCICIOS) {
-          // Si es calentamiento, lo ignoramos
-          if (ej.es_calentamiento === true || ej.es_calentamiento === 'true') continue; 
+            if (objId === 1 || objId === 3) { 
+              nuevosDescansos = Math.max(30, nuevosDescansos - 15); 
+            } else if (objId === 2) { 
+              nuevasSeries = nuevasSeries + 1;
+            } else if (objId === 5) { 
+              nuevosDescansos = nuevosDescansos + 30; 
+            }
 
-          let nuevasSeries = parseInt(ej.series);
-          let nuevosDescansos = parseInt(ej.descanso_seg);
-          const objId = parseInt(rutina.objetivo_id); // Aseguramos que sea número
+            return {
+              ...ej,
+              series: nuevasSeries,
+              descanso_seg: nuevosDescansos
+            };
+          })
+      );
 
-          // 🧬 LÓGICA DE SOBRECARGA
-          if (objId === 1 || objId === 3) { 
-            nuevosDescansos = Math.max(30, nuevosDescansos - 15); 
-          } else if (objId === 2) { 
-            nuevasSeries = nuevasSeries + 1;
-          } else if (objId === 5) { 
-            nuevosDescansos = nuevosDescansos + 30; 
-          }
-
-          console.log(`🏋️ Actualizando EJ_ID: ${ej.id} | Series: ${ej.series} -> ${nuevasSeries} | Descanso: ${ej.descanso_seg} -> ${nuevosDescansos}`);
-
-          // Hacemos el Update explícito
-          const { error: errUpdateEj } = await supabase.from('RUTINA_EJERCICIOS')
-            .update({ series: nuevasSeries, descanso_seg: nuevosDescansos })
-            .eq('id', ej.id);
-
-          if (errUpdateEj) console.error(`❌ Error actualizando EJ ${ej.id}:`, errUpdateEj.message);
-        }
+      if (ejerciciosActualizados.length > 0) {
+        const { error: errUpdateEj } = await supabase.from('RUTINA_EJERCICIOS').upsert(ejerciciosActualizados);
+        if (errUpdateEj) console.error("❌ Error actualizando ejercicios batch:", errUpdateEj.message);
       }
 
-      // 3. 🧹 LIMPIEZA DEL PLATEAU (Para que desaparezca el botón)
       await supabase.from('USUARIOS').update({ fecha_registro: new Date().toISOString() }).eq('id', user.id);
 
       Alert.alert("¡Nivel Superado! 🦍🔥", "Tus rutinas han evolucionado. ¡A darle con todo!");
-      
-      // Refrescamos la UI (usando nuestra nueva carga en paralelo)
       await Promise.all([refetch(), refetchCoach()]);
 
     } catch (e: any) {
@@ -176,7 +183,6 @@ export default function HomeScreen() {
   };
 
   const renderPlanDeHoy = () => {
-    // Usamos el cargandoGlobal (cargandoStats) o el del hook para mostrar el loader
     if (cargando || cargandoStats) return <View style={styles.loaderContainer}><ActivityIndicator color={colors.primary} /></View>;
     if (!rutinaHoy) return null;
 
@@ -220,7 +226,6 @@ export default function HomeScreen() {
         </View>
         
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 15 }}>
-          {/* BOTÓN DE AGREGAR RUTINA */}
           <PressableCard 
             style={{ backgroundColor: colors.primary, width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' }}
             onPress={() => router.push('/create-routine')} 
@@ -228,7 +233,6 @@ export default function HomeScreen() {
             <Ionicons name="add" size={24} color="#000" />
           </PressableCard>
 
-          {/* FOTO DE PERFIL DE GOOGLE */}
           <PressableCard style={styles.avatarContainer} onPress={() => router.push('/profile')}>
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} style={{ width: '100%', height: '100%', borderRadius: 50 }} />
@@ -241,9 +245,30 @@ export default function HomeScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         
+        {/* 🚀 BANNER DE INAUGURACIÓN (Aparece primero) */}
+        {mostrarInauguracion && (
+          <TouchableOpacity 
+            activeOpacity={0.9} 
+            onPress={iniciarMiniRutina} 
+            style={styles.bannerInauguracion}
+          >
+            <View style={styles.inauguracionIconBox}>
+              <Ionicons name="flame" size={26} color="#000" />
+            </View>
+            <View style={{ flex: 1, marginHorizontal: 12 }}>
+              <Text style={styles.bannerInauguracionTitle}>¡Prueba tu App Ahora!</Text>
+              <Text style={styles.bannerInauguracionSub}>
+                Entrenamiento rápido de 3 ejercicios para que conozcas la experiencia.
+              </Text>
+            </View>
+            <View style={styles.playButton}>
+              <Ionicons name="play" size={20} color="#000" style={{ marginLeft: 3 }} />
+            </View>
+          </TouchableOpacity>
+        )}
+
         <StreakWidget />
 
-        {/* 🧠 BANNER DEL COACH */}
         {!loadingCoach && coachData && (
           <PressableCard 
             style={{
@@ -277,7 +302,6 @@ export default function HomeScreen() {
               </View>
             </View>
 
-            {/* 🔥 BOTÓN DE EVOLUCIÓN CON PRESSABLECARD */}
             {coachData.plateau_detectado && (
               <PressableCard 
                 style={styles.evolveBtn}
@@ -339,6 +363,13 @@ const styles = StyleSheet.create({
   appName: { ...typography.h1 },
   avatarContainer: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primaryFaded, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.primary },
   avatarText: { ...typography.small, color: colors.primary, fontWeight: '900' },
+  
+  // 🚀 Estilos del nuevo Banner de Inauguración
+  bannerInauguracion: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 77, 0, 0.1)', padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.primary, marginBottom: spacing.lg },
+  inauguracionIconBox: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
+  bannerInauguracionTitle: { ...typography.label, color: colors.primary, marginBottom: 4 },
+  bannerInauguracionSub: { ...typography.small, color: colors.textSecondary },
+
   banner: { backgroundColor: colors.surface, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
   bannerTitle: { ...typography.label, marginBottom: 4 },
   bannerSub: { ...typography.small, marginBottom: spacing.md },

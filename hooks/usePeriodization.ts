@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { supabase } from '../lib/supabase';
 
-// Definimos la forma de los datos que vienen del SQL
 interface PeriodizationData {
   fase_actual: string;
   sesiones_historicas: number;
@@ -19,13 +18,12 @@ export function usePeriodization() {
   const fetchPeriodization = useCallback(async () => {
     try {
       setLoading(true);
-      // 🚀 Llamamos a nuestra nueva función inteligente
       const { data: rpcData, error } = await supabase.rpc('get_estado_periodizacion');
       
       if (error) throw error;
       setData(rpcData);
     } catch (e) {
-      console.error("❌ Error en usePeriodization:", e);
+      console.error(" Error en usePeriodization:", e);
     } finally {
       setLoading(false);
     }

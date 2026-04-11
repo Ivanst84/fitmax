@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from 'react';
 import {
   View, Text, ScrollView, TextInput,
-  Alert, StatusBar, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, Modal, TouchableOpacity
+  StatusBar, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, Modal, TouchableOpacity
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,7 +14,7 @@ import * as Sharing from 'expo-sharing';
 import PressableCard from '../../components/ui/PressableCard';
 import SessionReportCard from '../../components/ui/SessionReportCard';
 import GhostTracker from '../../components/ui/GhostTracker';
-
+import CustomAlert from '../../components/ui/CustomAlert';
 import { colors, spacing, radius, typography, buttons } from '../../constants/theme';
 import { useRoutineDetail } from '../../hooks/useRoutineDetail';
 import { useWorkoutSession } from '../../hooks/useWorkoutSession';
@@ -85,7 +85,7 @@ export default function WorkoutSessionScreen() {
     currentExercise, currentExerciseIndex, setsData, updateSetData, toggleSetComplete,
     skipRest, allSetsDone, totalExercises, restSeconds, isResting,
     goToNextExercise, goToPrevExercise, finishAndSaveWorkout, isSaving, swapExercise,
-    ejerciciosActivos, previousSets 
+    ejerciciosActivos, previousSets, updateCascadeSetData
   } = useWorkoutSession(ejerciciosAjustados);
 
   const [showTechGuide, setShowTechGuide] = useState(false);
@@ -94,6 +94,22 @@ export default function WorkoutSessionScreen() {
   const [workoutStats, setWorkoutStats] = useState({ volume: 0, sets: 0, finalTimeStr: '0:00' });
   const [aiMessage, setAiMessage] = useState("Generando tu resumen épico...");
   const [cargandoIA, setCargandoIA] = useState(false);
+
+  // 🚀 ESTADO GLOBAL PARA EL CUSTOM ALERT
+  const [alertData, setAlertData] = useState<{
+    visible: boolean;
+    title: string;
+    message: string;
+    type: 'info' | 'success' | 'warning' | 'destructive';
+    cancelText?: string;
+    confirmText?: string;
+    onConfirm: () => void;
+    onCancel?: () => void;
+  }>({
+    visible: false, title: '', message: '', type: 'info', onConfirm: () => {}
+  });
+
+  const closeAlert = () => setAlertData(prev => ({ ...prev, visible: false }));
 
   const timerRef = useRef<TimerHandle>(null);
   const viewShotRef = useRef<ViewShot>(null);
@@ -109,23 +125,26 @@ export default function WorkoutSessionScreen() {
     return firstIncomplete === -1 ? currentSetsMemo.length - 1 : firstIncomplete;
   }, [currentSetsMemo]);
 
+  const hasCompletedSets = useMemo(() => {
+    return ejerciciosActivos.some(ex => (setsData[ex.id] || []).some((s: any) => s.completed));
+  }, [setsData, ejerciciosActivos]);
+
   const formatTime = (sec: number) => { const m = Math.floor(sec / 60); const s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
+  // 🚀 REEMPLAZO 1: Alerta de Regresión
   const handleRegresion = (regresionId: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert('¿Cambiar a versión fácil?', 'Reemplazaremos este ejercicio por uno menos exigente.', [
-        { text: 'Cancelar', style: 'cancel' },
-        { text: 'Sí, cambiar', onPress: () => swapExercise && swapExercise(currentExercise.id, regresionId) },
-    ]);
-  };
-
-  // 🚀 FIX: AUTO-FILL EN CASCADA
-  const handleCascadeUpdate = (startIndex: number, field: 'kg' | 'reps', val: string) => {
-    if (!currentExercise) return;
-    // Si edito el set 1, le copio el valor al set 2 y 3 (siempre que no estén ya completados)
-    currentSetsMemo.forEach((set, i) => {
-      if (i >= startIndex && !set.completed) {
-        updateSetData(currentExercise.id, i, field, val);
+    setAlertData({
+      visible: true,
+      title: '¿Cambiar a versión fácil?',
+      message: 'Reemplazaremos este ejercicio por uno menos exigente.',
+      type: 'info',
+      confirmText: 'Sí, cambiar',
+      cancelText: 'Cancelar',
+      onCancel: closeAlert,
+      onConfirm: () => {
+        closeAlert();
+        swapExercise && swapExercise(currentExercise.id, regresionId);
       }
     });
   };
@@ -143,69 +162,84 @@ export default function WorkoutSessionScreen() {
     } catch (error) { setAiMessage(`¡Eres una máquina! A descansar y crecer.`); } finally { setCargandoIA(false); }
   };
 
-  const handleFinish = () => {
+const handleFinish = () => {
     let setsCalculados = 0;
     ejerciciosActivos.forEach((ex: any) => { (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) setsCalculados++; }); });
 
     if (setsCalculados === 0) {
-      Alert.alert('Entrenamiento Vacío', 'No has completado ninguna serie.', [{ text: 'Seguir entrenando', style: 'cancel' }, { text: 'Descartar y Salir', onPress: () => router.back() }]);
+      setAlertData({
+        visible: true,
+        title: 'Entrenamiento Vacío',
+        message: 'No has completado ninguna serie.',
+        type: 'warning',
+        confirmText: 'Descartar y Salir',
+        cancelText: 'Seguir entrenando',
+        onCancel: closeAlert,
+        onConfirm: () => {
+          closeAlert();
+          router.back();
+        }
+      });
       return;
     }
 
-    Alert.alert('¡Entrenamiento completado!', '¿Deseas finalizar y guardar este entrenamiento?', [
-        { text: 'Seguir entrenando', style: 'cancel' },
-        {
-          text: 'Terminar y Guardar',
-          onPress: async () => {
-            try {
-              const tiempoFinalSegundos = timerRef.current?.getElapsedSeconds() ?? 0;
-              const tiempoFinalStr = formatTime(tiempoFinalSegundos);
-              let volCalculado = 0;
-              let repsTotales = 0; 
-              ejerciciosActivos.forEach((ex: any) => { 
-                (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) { volCalculado += (parseFloat(s.kg) || 0) * (parseInt(s.reps) || 0); repsTotales += parseInt(s.reps) || 0; } }); });
+    // 🚀 FIX UX: Mensaje dinámico dependiendo de si terminó todo o se fue a la mitad
+    setAlertData({
+      visible: true,
+      title: allSetsDone ? '¡Misión Cumplida!' : '¿Terminar antes?',
+      message: allSetsDone 
+        ? '¡Excelente trabajo! ¿Deseas finalizar y guardar tu entrenamiento?' 
+        : 'Aún tienes series pendientes. ¿Deseas guardar lo que has hecho hasta ahora?',
+      type: allSetsDone ? 'success' : 'info',
+      confirmText: 'Terminar y Guardar',
+      cancelText: 'Seguir entrenando',
+      onCancel: closeAlert,
+      onConfirm: async () => {
+        closeAlert();
+        try {
+          const tiempoFinalSegundos = timerRef.current?.getElapsedSeconds() ?? 0;
+          const tiempoFinalStr = formatTime(tiempoFinalSegundos);
+          let volCalculado = 0;
+          let repsTotales = 0; 
+          ejerciciosActivos.forEach((ex: any) => { 
+            (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) { volCalculado += (parseFloat(s.kg) || 0) * (parseInt(s.reps) || 0); repsTotales += parseInt(s.reps) || 0; } }); });
 
-              let caloriasReales = 10; 
-              const { data: { session } } = await supabase.auth.getSession();
-              const user = session?.user;
+          let caloriasReales = 10; 
+          const { data: { session } } = await supabase.auth.getSession();
+          const user = session?.user;
 
-              if (user) {
-                const { data: kcalData, error: kcalError } = await supabase.rpc('calcular_calorias_sesion', {
-                  p_user_id: user.id,
-                  p_duracion_seg: tiempoFinalSegundos,
-                  p_volumen_total: volCalculado,
-                  p_total_reps: repsTotales 
-                });
+          if (user) {
+            const { data: kcalData, error: kcalError } = await supabase.rpc('calcular_calorias_sesion', {
+              p_user_id: user.id,
+              p_duracion_seg: tiempoFinalSegundos,
+              p_volumen_total: volCalculado,
+              p_total_reps: repsTotales 
+            });
 
-                if (!kcalError && kcalData) {
-                  caloriasReales = kcalData;
-                } else {
-                  console.warn("Fallo el cálculo exacto, usando respaldo lineal.");
-                  const minutos = tiempoFinalSegundos / 60;
-                  caloriasReales = minutos > 1 ? Math.round(minutos * 5) : 10;
-                }
-              }
+            if (!kcalError && kcalData) caloriasReales = kcalData;
+            else caloriasReales = tiempoFinalSegundos / 60 > 1 ? Math.round((tiempoFinalSegundos / 60) * 5) : 10;
+          }
 
-              setWorkoutStats({ volume: volCalculado, sets: setsCalculados, finalTimeStr: tiempoFinalStr });
-              
-              const id = await finishAndSaveWorkout(rutinaId as string, rutina?.nombre || 'Rutina', tiempoFinalSegundos, volCalculado, setsCalculados, caloriasReales);
-              
-              if (id) {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setSavedSessionId(id); 
-                setShowSummary(true); 
-                generarMensajeIA(volCalculado, setsCalculados, tiempoFinalStr, caloriasReales);
-              } else throw new Error("No se pudo guardar");
-            } catch (e) { 
-              console.error("Error al finalizar:", e);
-              Alert.alert('Error', 'No se pudo guardar tu entrenamiento.'); 
-            }
-          },
-        },
-      ]
-    );
+          setWorkoutStats({ volume: volCalculado, sets: setsCalculados, finalTimeStr: tiempoFinalStr });
+          
+          const id = await finishAndSaveWorkout(rutinaId as string, rutina?.nombre || 'Rutina', tiempoFinalSegundos, volCalculado, setsCalculados, caloriasReales);
+          
+          if (id) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            setSavedSessionId(id); 
+            setShowSummary(true); 
+            generarMensajeIA(volCalculado, setsCalculados, tiempoFinalStr, caloriasReales);
+          } else throw new Error("No se pudo guardar");
+        } catch (e) { 
+          console.error("Error al finalizar:", e);
+          setAlertData({
+            visible: true, title: 'Error de Guardado', message: 'No pudimos guardar tu progreso. Intenta de nuevo.',
+            type: 'destructive', confirmText: 'Entendido', onConfirm: closeAlert
+          });
+        }
+      }
+    });
   };
-
   const shareWorkout = async () => {
     try {
       if (viewShotRef.current && viewShotRef.current.capture) {
@@ -226,7 +260,21 @@ export default function WorkoutSessionScreen() {
     } catch (error) { console.error('Error al compartir', error); }
   };
 
-  if (cargando || !currentExercise) return <View style={s.center}><ActivityIndicator color={colors.primary} size="large" /></View>;
+  if (cargando || !currentExercise) {
+    return (
+      <View style={s.container}>
+        <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+          <View style={s.skeletonBtn} />
+          <View style={s.skeletonTimer} />
+          <View style={s.skeletonBtn} />
+        </View>
+        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.xl }}>
+          <View style={s.skeletonTitle} />
+          <View style={s.skeletonCard} />
+        </View>
+      </View>
+    );
+  }
 
   const currentSets = currentSetsMemo;
   const equipoId = currentExercise.ejercicio.equipo_id;
@@ -244,8 +292,19 @@ export default function WorkoutSessionScreen() {
             <Ionicons name="close" size={22} color="#fff" />
           </PressableCard>
           <TimerIsland ref={timerRef} label="SESIÓN ACTIVA" />
-          <PressableCard style={s.finishBtn} onPress={handleFinish} disabled={isSaving}>
-            <Text style={s.finishBtnText}>FIN</Text>
+          
+          <PressableCard 
+            style={[
+              s.finishBtn, 
+              hasCompletedSets && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.6)' }
+            ]} 
+            onPress={handleFinish} 
+            disabled={isSaving}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Ionicons name="flag" size={14} color="#000" />
+              <Text style={s.finishBtnText}>FIN</Text>
+            </View>
           </PressableCard>
         </LinearGradient>
       )}
@@ -315,27 +374,26 @@ export default function WorkoutSessionScreen() {
 
                   {!esPesoCorporal && (
                     <View style={[s.inputWrapper, { flex: 0.8 }]}>
-                      <TextInput
-                        style={[s.input, set.completed && s.inputCompleted]}
-                        keyboardType="numeric" placeholder="0" placeholderTextColor={colors.textMuted}
-                        value={set.kg?.toString()} 
-                        onChangeText={(val) => handleCascadeUpdate(index, 'kg', val)} 
-                        editable={!set.completed}
-                      />
+                   <TextInput
+                      style={[s.input, set.completed && s.inputCompleted]}
+                      keyboardType="numeric" placeholder="0" placeholderTextColor={colors.textMuted}
+                      value={set.kg?.toString()} 
+                      onChangeText={(val) => updateCascadeSetData(currentExercise.id, index, 'kg', val)} 
+                      editable={!set.completed}
+                    />
                     </View>
                   )}
 
                   <View style={[s.inputWrapper, { flex: 0.8, marginLeft: esPesoCorporal ? 20 : 0 }]}>
-                    <TextInput
-                      style={[s.input, set.completed && s.inputCompleted]}
-                      keyboardType="numeric" placeholder={String(currentExercise.repeticiones)} placeholderTextColor={colors.textMuted}
-                      value={set.reps?.toString()} 
-                      onChangeText={(val) => handleCascadeUpdate(index, 'reps', val)} 
-                      editable={!set.completed}
-                    />
+                  <TextInput
+                    style={[s.input, set.completed && s.inputCompleted]}
+                    keyboardType="numeric" placeholder={String(currentExercise.repeticiones)} placeholderTextColor={colors.textMuted}
+                    value={set.reps?.toString()} 
+                    onChangeText={(val) => updateCascadeSetData(currentExercise.id, index, 'reps', val)} 
+                    editable={!set.completed}
+                  />
                   </View>
                   
-                  {/* 🚀 FIX: Aumentamos área táctil y altura mínima para evitar "Dedos Gordos" */}
                   <TouchableOpacity 
                     style={[s.checkBtn, set.completed && s.checkBtnCompleted]} 
                     onPress={() => toggleSetComplete(currentExercise.id, index)}
@@ -370,12 +428,10 @@ export default function WorkoutSessionScreen() {
         </ScrollView>
       )}
 
-      {/* 🚀 FIX: Modal ahora soporta gesto "Atrás" en Android (onRequestClose) */}
       <Modal visible={showTechGuide} animationType="slide" transparent={true} onRequestClose={() => setShowTechGuide(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.modalContent, { paddingBottom: insets.bottom + 20 }]}>
             
-            {/* 🚀 FIX: Cabecera reconstruida para que la "X" sea gigante y fácil de presionar */}
             <View style={s.modalHeader}>
               <View style={s.modalHandle} />
               <TouchableOpacity 
@@ -391,6 +447,24 @@ export default function WorkoutSessionScreen() {
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={s.modalTitle}>{currentExercise.ejercicio.nombre}</Text>
               <ExerciseGuideCard ejercicio={currentExercise.ejercicio} compact={true} />
+              <TouchableOpacity 
+                style={{
+                  backgroundColor: colors.primary, padding: 15, borderRadius: radius.lg, 
+                  flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8,
+                  marginTop: 20, marginBottom: 20
+                }}
+                activeOpacity={0.8}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setShowTechGuide(false); // Cerramos el modal primero
+                  setTimeout(() => {
+                    router.push(`/exercise/${currentExercise.ejercicio_id}`); // Abrimos el video
+                  }, 100); // Pequeño delay para que no brinque la animación
+                }}
+              >
+                <Ionicons name="play-circle" size={24} color="#000" />
+                <Text style={{ color: '#000', fontWeight: 'bold', fontSize: 16 }}>Ver Video de Ejecución</Text>
+              </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
@@ -441,6 +515,10 @@ export default function WorkoutSessionScreen() {
           <Text style={s.savingText}>GUARDANDO SESIÓN...</Text>
         </View>
       )}
+
+      {/* 🚀 NUESTRO CUSTOM ALERT RENDERIZADO AL FINAL */}
+      <CustomAlert {...alertData} />
+      
     </KeyboardAvoidingView>
   );
 }
@@ -477,10 +555,8 @@ const s = StyleSheet.create({
   ghostText: { flex: 1, ...typography.small, textAlign: 'center', fontStyle: 'italic' },
   setTextCompleted: { color: colors.primary, opacity: 0.6 },
   inputWrapper: { paddingHorizontal: 4 },
-  // 🚀 FIX: minHeight subido a 48px para cumplir estándares táctiles
   input: { backgroundColor: colors.surfaceLight, color: '#fff', borderRadius: radius.sm, paddingVertical: 10, textAlign: 'center', fontSize: 18, fontWeight: 'bold', minHeight: 48 },
   inputCompleted: { backgroundColor: 'transparent', color: colors.primary },
-  // 🚀 FIX: minHeight subido a 48px
   checkBtn: { flex: 0.5, minHeight: 48, backgroundColor: colors.surfaceLight, borderRadius: radius.sm, justifyContent: 'center', alignItems: 'center' },
   checkBtnCompleted: { backgroundColor: colors.primary },
   restCard: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center', borderWidth: 1, borderColor: colors.primaryFaded },
@@ -492,7 +568,6 @@ const s = StyleSheet.create({
   prevLink: { marginTop: spacing.lg, alignItems: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#111', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, height: '85%' },
-  // 🚀 FIX: Header del modal reconstruido para el botón gigante
   modalHeader: { height: 60, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   modalHandle: { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2 },
   modalClose: { position: 'absolute', right: 0, top: 10, padding: 5, zIndex: 10 },
@@ -517,4 +592,9 @@ const s = StyleSheet.create({
   summaryActions: { width: '100%', marginTop: 20, gap: 16 },
   shareInstagramBtn: { flexDirection: 'row', backgroundColor: '#E1306C', paddingVertical: 16, borderRadius: radius.full, justifyContent: 'center', alignItems: 'center', gap: 10 },
   shareInstagramText: { ...typography.label, color: '#fff' },
+
+  skeletonBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface },
+  skeletonTimer: { width: 120, height: 40, borderRadius: radius.md, backgroundColor: colors.surface },
+  skeletonTitle: { width: '60%', height: 30, borderRadius: radius.sm, backgroundColor: colors.surface, marginBottom: 20 },
+  skeletonCard: { width: '100%', height: 200, borderRadius: radius.lg, backgroundColor: colors.surface }
 });

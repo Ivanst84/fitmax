@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import * as Haptics from 'expo-haptics';
 import { supabase } from '../lib/supabase';
-// 🚀 IMPORTACIÓN CLAVE PARA GUARDAR SIN INTERNET
 import { saveSessionWithFallback } from '../lib/offlineQueue';
 
 export function useWorkoutSession(ejerciciosIniciales: any[]) {
@@ -13,7 +12,6 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
   const [restSeconds, setRestSeconds] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
 
-  // 👻 BUSCAR HISTORIAL ANTERIOR
   const fetchPreviousStats = async (ejercicios: any[]) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user || ejercicios.length === 0) return;
@@ -24,7 +22,8 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
       .select('ejercicio_id, series_json, created_at')
       .eq('user_id', user.id)
       .in('ejercicio_id', ids)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(ids.length * 3); 
 
     if (data) {
       const map: any = {};
@@ -49,7 +48,6 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     }
   }, [ejerciciosIniciales]);
 
-  // 🔄 FUNCIÓN PARA INTERCAMBIAR EJERCICIO (Regresión)
   const swapExercise = async (relationId: string, newExerciseId: string) => {
     try {
       const { data: newEj } = await supabase
@@ -82,7 +80,6 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     setSetsData({ ...setsData, [exerciseId]: newSets });
   };
 
-  // 🚀 LA FUNCIÓN QUE CORREGIMOS PARA QUE USE EL OFFLINE QUEUE 🚀
   const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: number, vol: number, sets: number, kcal: number) => {
     try {
       setIsSaving(true);
@@ -90,7 +87,6 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
       
       if (!user) return null; 
 
-      // 1. Armamos el "Paquete" de la sesión principal
       const sessionPayload = {
         user_id: user.id, 
         rutina_id: rutinaId, 
@@ -99,10 +95,9 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
         volumen_total_kg: vol,
         sets_completados: sets, 
         calorias_quemadas: kcal,
-        fecha: new Date().toISOString() // Muy importante para el orden
+        fecha: new Date().toISOString() 
       };
 
-      // 2. Armamos el "Paquete" del detalle de cada ejercicio
       const exerciseLogs = activeExercises.map(ex => ({
         user_id: user.id,
         ejercicio_id: ex.ejercicio_id,
@@ -110,7 +105,6 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
         series_json: setsData[ex.id] || [] 
       }));
 
-      // 3. 🛡️ Enviamos todo a nuestro guardián Offline
       const result = await saveSessionWithFallback(sessionPayload, exerciseLogs);
 
       if (result.queued) {
@@ -119,7 +113,6 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
         console.log(`✅ [Workout] Sesión guardada directamente en la nube.`);
       }
 
-      // Devolvemos el ID real si se guardó, o un ID falso temporal si está offline
       return result.sessionId ?? `offline_${Date.now()}`;
 
     } catch (e) {
@@ -145,13 +138,32 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     isSaving,
     totalExercises: activeExercises.length,
     ejerciciosActivos: activeExercises,
+    
+    // Función clásica (actualiza un solo set)
     updateSetData: (id: string, idx: number, field: string, val: string) => {
-      const s = [...(setsData[id] || [])];
-      if (s[idx]) {
-        s[idx] = { ...s[idx], [field]: val };
-        setSetsData({...setsData, [id]: s});
-      }
+      setSetsData(prev => {
+        const s = [...(prev[id] || [])];
+        if (s[idx]) {
+          s[idx] = { ...s[idx], [field]: val };
+        }
+        return { ...prev, [id]: s };
+      });
     },
+
+    // 🚀 NUEVA FUNCIÓN: Actualiza en cascada de forma segura
+    updateCascadeSetData: (id: string, startIndex: number, field: string, val: string) => {
+      setSetsData(prev => {
+        const s = [...(prev[id] || [])];
+        // Recorremos desde el set actual hacia abajo
+        for (let i = startIndex; i < s.length; i++) {
+          if (!s[i].completed) { // Solo si no está palomeado
+            s[i] = { ...s[i], [field]: val };
+          }
+        }
+        return { ...prev, [id]: s };
+      });
+    },
+
     allSetsDone: activeExercises[currentExerciseIndex] 
       ? (setsData[activeExercises[currentExerciseIndex].id] || []).every(s => s.completed) 
       : false,

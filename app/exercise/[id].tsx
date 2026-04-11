@@ -30,6 +30,13 @@ export default function ExerciseDetail() {
   // 🚀 ESTADO: Para guardar la URL final construida
   const [videoUri, setVideoUri] = useState<string | null>(null);
 
+  // 🚀 FIX: Bandera de seguridad para evitar memory leaks asíncronos
+  const [isMounted, setIsMounted] = useState(true);
+
+  useEffect(() => {
+    return () => setIsMounted(false); // Cuando la pantalla muere, bajamos la bandera
+  }, []);
+
   useEffect(() => { 
     cargarDatosCompletos(); 
   }, [id]);
@@ -90,7 +97,8 @@ export default function ExerciseDetail() {
     } catch (e) { 
       console.error(e); 
     } finally { 
-      setCargando(false); 
+      // Solo actualizamos el estado si el componente sigue vivo
+      if (isMounted) setCargando(false); 
     }
   };
 
@@ -99,22 +107,22 @@ export default function ExerciseDetail() {
     p.loop = true; 
   });
 
-  // 🚀 FIX: Ciclo de vida estricto para evitar Memory Leaks
-// 🚀 FIX: Ciclo de vida estricto para evitar Memory Leaks
+  // 🚀 FIX: Ciclo de vida estricto y seguro
   useEffect(() => {
     if (!player) return;
 
     // Agregamos el listener
     const subscription = player.addListener('playingChange', (payload) => {
-      setIsPlaying(payload.isPlaying);
+      if (isMounted) { // Solo actualizamos si seguimos en la pantalla
+        setIsPlaying(payload.isPlaying);
+      }
     });
 
     // Cleanup function: Se ejecuta al desmontar el componente
     return () => {
       subscription.remove(); // Matamos el listener
-      // ❌ AQUÍ YA NO HAY NADA MÁS. NADA DE PLAYER.PAUSE()
     };
-  }, [player]);
+  }, [player, isMounted]);
 
   if (cargando) return <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!ejercicio) return <View style={s.center}><Text style={{color: '#fff'}}>No encontrado</Text></View>;

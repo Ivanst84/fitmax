@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, StyleSheet, ScrollView, ActivityIndicator, 
-  StatusBar, Alert, TextInput, KeyboardAvoidingView, Platform
+  StatusBar, Alert, TextInput, KeyboardAvoidingView, Platform,
+  TouchableOpacity
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,10 +15,10 @@ import { supabase } from '../../lib/supabase';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useGeminiRoutine } from '../../hooks/useGeminiRoutine';
 
-// 🚀 FIX: Usaremos PressableCard en lugar de TouchableOpacity para consistencia
 import PressableCard from '../../components/ui/PressableCard';
+// 🚀 PASO 1: Importamos el nuevo componente de calibración
+import GhostCalibration from '../../components/ui/GhostCalibration';
 
-// 🧠 DEFINICIÓN DE LOS DÍAS DE LA SEMANA PARA EL NUEVO SELECTOR
 const DIAS_SEMANA = [
   { id: 1, label: 'L', full: 'Lunes' },
   { id: 2, label: 'M', full: 'Martes' },
@@ -50,6 +51,9 @@ export default function OnboardingScreen() {
   const [respuestas, setRespuestas] = useState<Record<string, any>>({});
   const [generando, setGenerando] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState(0);
+  
+  // 🚀 PASO 2: Estado para mostrar la calibración
+  const [mostrarCalibracion, setMostrarCalibracion] = useState(false);
 
   const [pesoInput, setPesoInput] = useState('75');
   const [estaturaInputCM, setEstaturaInputCM] = useState('170');
@@ -113,13 +117,17 @@ export default function OnboardingScreen() {
     if (pasoActual > 0) setPasoActual(prev => prev - 1);
   };
 
-  // 🚀 LÓGICA DE GUARDADO FINAL
-  const finalizarCuestionario = async (perfilFinal: any) => {
+const finalizarCuestionario = async (perfilFinal: any) => {
+    // El juego ahora es nuestra "pantalla de carga".
+    setMostrarCalibracion(true);
+    setGenerando(false); 
+
     try {
-      setGenerando(true);
+      // 1. Obtener usuario
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuario no encontrado');
 
+      // 2. Preparar catálogo
       let query = supabase.from('EJERCICIOS').select('id, nombre');
 
       if (perfilFinal.equipo === 'casa') {
@@ -135,23 +143,33 @@ export default function OnboardingScreen() {
       }
 
       const { data: catalogoDB, error: errorCat } = await query;
-      console.log("🏋️ Ejercicios encontrados para mandar a Gemini:", catalogoDB?.length);
       if (errorCat || !catalogoDB) throw new Error('No se pudo cargar el catálogo filtrado');
       
+      // 3. 🧠 LLAMADA A GEMINI (Esto ocurre mientras el usuario juega/calibra)
       const planFinal = await generateRoutine(perfilFinal, catalogoDB);
 
-      await Promise.all(planFinal.map(async (dia: any, i: number) => {
-        const diaSemanaReal = perfilFinal.dias_entrenamiento[i] || dia.dia_semana_sugerido;
+      // 🚀 LÓGICA PURA Y ESTRICTA (Respeto absoluto al usuario)
+      // Ordenamos los días que el usuario seleccionó explícitamente [Ej: 1, 3, 5]
+      const agendaOrdenada = [...perfilFinal.dias_entrenamiento].sort((a, b) => a - b);
+
+      // 4. Guardar Rutinas y Ejercicios
+      await Promise.all(planFinal.map(async (diaIA: any, index: number) => {
+        
+        // Asignamos el día de la semana estrictamente al orden elegido
+        const diaSemanaAsignado = agendaOrdenada[index % agendaOrdenada.length];
+        
+        // Nombre estricto: "Día 1 - Fuerza", "Día 2 - Fuerza", etc.
+        const nombreFinal = `Día ${index + 1} - ${diaIA.dia_nombre}`;
 
         const { data: rutinaData, error: errR } = await supabase
           .from('RUTINAS')
           .insert([{ 
             user_id: user.id, 
-            nombre: dia.dia_nombre, 
-            descripcion: dia.descripcion,
+            nombre: nombreFinal, 
+            descripcion: diaIA.descripcion,
             objetivo_id: perfilFinal.objetivo === 'perder_peso' ? 1 : perfilFinal.objetivo === 'hipertrofia' ? 2 : 3,
             nivel_id: perfilFinal.nivel === 'principiante' ? 1 : perfilFinal.nivel === 'intermedio' ? 2 : 3,
-            dia_semana: diaSemanaReal, 
+            dia_semana: diaSemanaAsignado, 
             duracion_min: perfilFinal.duracion || 45,
             es_personalizada: true
           }])
@@ -159,11 +177,11 @@ export default function OnboardingScreen() {
           .single();
 
         if (errR) {
-          console.error("Error al crear Rutina:", errR.message);
+          console.error("Error insertando rutina:", errR);
           return; 
         }
 
-        const ejerciciosAInsertar = dia.ejercicios.map((ej: any, idx: number) => ({
+        const ejerciciosAInsertar = diaIA.ejercicios.map((ej: any, idx: number) => ({
           rutina_id: rutinaData.id,
           ejercicio_id: ej.ejercicio_id,
           orden: idx + 1,
@@ -174,13 +192,11 @@ export default function OnboardingScreen() {
         }));
 
         if (ejerciciosAInsertar.length > 0) {
-          const { error: errEj } = await supabase
-            .from('RUTINA_EJERCICIOS')
-            .insert(ejerciciosAInsertar);
-          if (errEj) console.error(`Error insertando ejercicios para ${dia.dia_nombre}:`, errEj.message);
+          await supabase.from('RUTINA_EJERCICIOS').insert(ejerciciosAInsertar);
         }
       }));
 
+      // 5. Actualizar Perfil de Usuario
       const pesoFinal = parseFloat(perfilFinal.peso_kg) || 75;
       const alturaFinal = parseInt(perfilFinal.altura_cm) || 170;
 
@@ -202,9 +218,8 @@ export default function OnboardingScreen() {
       if (perfilFinal.edad === '26_35') añoNacimiento = añoActual - 30;
       if (perfilFinal.edad === '36_45') añoNacimiento = añoActual - 40;
       if (perfilFinal.edad === '46_mas') añoNacimiento = añoActual - 50;
-      const fechaNacAprox = `${añoNacimiento}-01-01`;
-
-      const { error: updateError } = await supabase.from('USUARIOS').upsert({
+      
+      await supabase.from('USUARIOS').upsert({
         id: user.id,
         email: user.email,
         dias_entrenamiento: perfilFinal.dias_entrenamiento, 
@@ -213,33 +228,34 @@ export default function OnboardingScreen() {
         objetivo: objetivoId,      
         nivel: nivelId,            
         genero: generoId,          
-        fecha_nacimiento: fechaNacAprox 
+        fecha_nacimiento: `${añoNacimiento}-01-01` 
       });
 
-      if (updateError) {
-        throw new Error(`No pudimos guardar tu perfil: ${updateError.message}`);
-      }
-
-      const { error: medidaError } = await supabase.from('MEDIDAS').insert({
+      // 6. Guardar medida inicial
+      await supabase.from('MEDIDAS').insert({
         user_id: user.id,
         peso_kg: pesoFinal,
         fecha: new Date().toISOString()
       });
 
-      if (medidaError) {
-        throw new Error(`No pudimos guardar tus medidas: ${medidaError.message}`);
-      }
-
+      // 7. Marcar Onboarding como completado Y generar Ticket Dorado
       await AsyncStorage.setItem(`onboarding_${user.id}`, 'true');
-      router.replace('/(tabs)/home');
+      await AsyncStorage.setItem(`inauguracion_pendiente_${user.id}`, 'true'); // 🔥 EL TICKET
 
     } catch (e: any) {
-      console.error('❌ FALLO TOTAL:', e.message);
-      Alert.alert('¡Ups!', e.message); 
-    } finally {
-      setGenerando(false);
+      console.error(' FALLO TOTAL EN SEGUNDO PLANO:', e.message);
+      Alert.alert('¡Ups!', 'Hubo un problema creando tu plan. Por favor, intenta de nuevo.'); 
+      setMostrarCalibracion(false); 
     }
   };
+
+  if (mostrarCalibracion) {
+    return (
+      <GhostCalibration 
+        onFinish={() => router.replace('/(tabs)/home')} 
+      />
+    );
+  }
 
   if (generando) {
     const msgs = ["Analizando biometría...", "Consultando catálogo...", "Generando ADN Fitness...", "Ajustando series...", "Finalizando protocolo..."];
@@ -268,10 +284,13 @@ export default function OnboardingScreen() {
             />
             <Text style={s.unitText}>{infoPaso.id === 'peso' ? 'kg' : 'cm'}</Text>
           </View>
-          {/* 🚀 FIX: PressableCard en el botón Continuar */}
+          
+          {/* 🚀 FIX: Contenido envuelto en View para evitar deformaciones */}
           <PressableCard style={s.continueBtn} onPress={handleCustomNext}>
-            <Text style={s.continueBtnText}>Continuar</Text>
-            <Ionicons name="arrow-forward" size={20} color="#000" />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={s.continueBtnText}>Continuar</Text>
+              <Ionicons name="arrow-forward" size={20} color="#000" />
+            </View>
           </PressableCard>
         </View>
       );
@@ -284,7 +303,6 @@ export default function OnboardingScreen() {
             {DIAS_SEMANA.map((dia) => {
               const isSelected = diasSeleccionados.includes(dia.id);
               return (
-                // 🚀 FIX: PressableCard en los selectores de días
                 <PressableCard
                   key={dia.id}
                   style={[s.dayBubble, isSelected && s.dayBubbleSelected]}
@@ -298,14 +316,18 @@ export default function OnboardingScreen() {
             })}
           </View>
           <Text style={s.daysHelperText}>Has seleccionado {diasSeleccionados.length} días</Text>
-          {/* 🚀 FIX: PressableCard en el botón Final */}
-          <PressableCard 
-            style={[s.continueBtn, diasSeleccionados.length < 2 && { opacity: 0.5 }]} 
+          
+          {/* 🚀 FIX: Botón de continuar consistente */}
+          <TouchableOpacity 
+            style={s.continueBtn}
+            activeOpacity={0.8}
             onPress={handleCustomNext}
           >
-            <Text style={s.continueBtnText}>Crear mi Rutina</Text>
-            <Ionicons name="arrow-forward" size={20} color="#000" />
-          </PressableCard>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Text style={s.continueBtnText}>CONTINUAR</Text>
+              <Ionicons name="arrow-forward" size={20} color="#000" />
+            </View>
+          </TouchableOpacity>
         </View>
       );
     }
@@ -315,7 +337,6 @@ export default function OnboardingScreen() {
     <KeyboardAvoidingView style={[s.container, { paddingTop: insets.top }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={s.header}>
         {pasoActual > 0 && (
-          // 🚀 FIX: PressableCard en el botón de ir atrás
           <PressableCard onPress={volverAtras} style={s.backBtn}>
             <Ionicons name="arrow-back" size={24} color="#fff" />
           </PressableCard>
@@ -335,7 +356,6 @@ export default function OnboardingScreen() {
         {infoPaso.custom ? renderCustomStep() : (
           <View style={s.optionsContainer}>
             {infoPaso.opciones?.map((op) => (
-              // 🚀 FIX: PressableCard en las tarjetas de opciones principales
               <PressableCard
                 key={op.id}
                 style={[s.card, respuestas[infoPaso.id] === op.id && s.cardSelected]}
@@ -379,14 +399,12 @@ const s = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 50 },
   bigInput: { color: '#fff', fontSize: 72, fontWeight: '900', borderBottomWidth: 2, borderBottomColor: colors.primary, textAlign: 'center', minWidth: 120 },
   unitText: { color: '#666', fontSize: 24, marginLeft: 10, marginBottom: 15 },
-  
   daysRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 20, marginTop: 10 },
   dayBubble: { width: 55, height: 55, borderRadius: 30, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#1A1A1A' },
   dayBubbleSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   dayBubbleText: { color: '#666', fontSize: 18, fontWeight: 'bold' },
   dayBubbleTextSelected: { color: '#000' },
   daysHelperText: { color: '#666', fontSize: 14, marginBottom: 40 },
-  
   continueBtn: { backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 30, width: '100%', gap: 10 },
   continueBtnText: { color: '#000', fontSize: 18, fontWeight: '900' },
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
