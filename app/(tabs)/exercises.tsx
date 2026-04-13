@@ -124,6 +124,7 @@ export default function ExercisesScreen() {
         </View>
       ) : (
         <FlatList
+       
           data={filtrados}
           keyExtractor={(item) => item.id}
           showsVerticalScrollIndicator={false}
@@ -143,9 +144,24 @@ export default function ExercisesScreen() {
                 <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
               </View>
             </TouchableOpacity>
-          )}
+         
+        
+        )
+        
+        
+        }
+
+         removeClippedSubviews={true} 
+  maxToRenderPerBatch={10}     
+  windowSize={5}               
+  getItemLayout={(_, index) => ({
+    length: 72, 
+    offset: 72 * index,
+    index,
+  })}
         />
       )}
+      
     </View>
   );
 }

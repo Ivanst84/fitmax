@@ -23,7 +23,7 @@ export const useGeminiRoutine = () => {
     if (!apiKey) throw new Error("Falta la clave de Gemini");
 
     try {
-      // 1. PRE-FILTRO
+         // 1. PRE-FILTRO (OPTIMIZADO PARA AHORRAR TOKENS)
       let nivelUsuarioNum = 2; 
       const nivelStr = String(respuestas.nivel).toLowerCase();
       if (nivelStr.includes('principiante') || respuestas.nivel === 1) nivelUsuarioNum = 1;
@@ -39,8 +39,17 @@ export const useGeminiRoutine = () => {
       if (objId === 5) numEjercicios = Math.max(3, numEjercicios - 2); 
       else if (objId === 1 || objId === 3) numEjercicios = numEjercicios + 1; 
 
-      let catalogoFiltrado = catalogoEjercicios.filter(ej => (ej.nivel_id || 1) <= nivelUsuarioNum);
-      if (catalogoFiltrado.length > 70) catalogoFiltrado = catalogoFiltrado.sort(() => 0.5 - Math.random()).slice(0, 70);
+      // 🔥 FILTRO MÁS ESTRICTO + LÍMITE MÁS BAJO (esto es lo que ahorra tokens)
+      let catalogoFiltrado = catalogoEjercicios.filter(ej => {
+        const niv = ej.nivel_id || 1;
+        if (nivelUsuarioNum === 1) return niv === 1;           // Principiante → SOLO nivel 1
+        return niv <= nivelUsuarioNum;                         // Intermedio/Avanzado → como antes
+      });
+
+      // Reducimos el máximo a 45 ejercicios (antes 70) → mucho menos tokens
+      if (catalogoFiltrado.length > 45) {
+        catalogoFiltrado = catalogoFiltrado.sort(() => 0.5 - Math.random()).slice(0, 45);
+      }
 
       const mapaReferencia: Record<number, string> = {};
       const catalogoSimplificado = catalogoFiltrado.map((ej, index) => {
@@ -49,19 +58,39 @@ export const useGeminiRoutine = () => {
         const infoExtra = ej.es_por_tiempo ? ' (Segundos)' : '';
         return `#${idCorto}: ${ej.nombre}${infoExtra}`;
       }).join('\n');
+     const systemInstruction = `Eres un Master Coach Experto y Fisioterapeuta. REGLAS ESTRICTAS E INQUEBRANTABLES:
+1. ESTRUCTURA: EXACTAMENTE ${numEjercicios} ejercicios por día. El ejercicio #1 SIEMPRE es calentamiento (cal: true), el resto fuerza/hipertrofia (cal: false).
+2. CALENTAMIENTO INTELIGENTE: Varía el calentamiento cada día.
+3. BALANCE ANATÓMICO: En rutinas de 3+ días, NUNCA omitas las piernas. Si piden "Tren Superior", haz un split lógicamente compensado (ej. 80% arriba, 20% abajo).
+4. PROTOCOLO CLÍNICO (PRINCIPIANTES Y SOBREPESO): Si el nivel es 'principiante' o el peso es >85kg, ASUME QUE NUNCA HAN ENTRENADO. 
+   - PROHIBIDO: Saltos (Jumping Jacks, Burpees), flexiones completas, sentadillas con barra.
+   - OBLIGATORIO: Selecciona ÚNICAMENTE ejercicios marcados con [BAJO IMPACTO] o regresiones de nivel 1. 
+   - ISOMETRÍAS: Planchas máximo de 15s a 20s. Nunca más.
+5. ADAPTACIÓN DE VOLUMEN (t, s, r): Si el objetivo es perder peso, descansos (t) de 45s-60s. Si es fuerza, descansos (t) de 90s-120s. 
+6. FORMATO: Usa SOLO IDs numéricos del catálogo. 'desc': MÁXIMO 5 PALABRAS.
+Responde ÚNICAMENTE en este JSON estricto: [{"d":1,"n":"Nombre Rutina","desc":"Máximo 5 palabras","ejs":[{"id":numero,"s":series,"r":"reps_o_seg","t":descanso,"cal":true_o_false}]}]`;
 
-      const systemInstruction = `Eres un Coach Experto. CADA DÍA DEBE TENER EXACTAMENTE ${numEjercicios} EJERCICIOS. 1 de calentamiento (cal: true), resto de fuerza (cal: false). Usa SOLO los IDs numéricos del catálogo. 'desc': MÁXIMO 5 PALABRAS. Solo responde JSON en este formato: [{"d":1,"n":"Nombre","desc":"Máximo cinco palabras aquí","ejs":[{"id":número,"s":series,"r":"reps_o_seg","t":descanso,"cal":true_o_false}]}]`;
-      const promptDelUsuario = `Objetivo ID: ${respuestas.objetivo}\nNivel ID: ${respuestas.nivel}\nDías: ${respuestas.frecuencia}\nGENERA ${respuestas.frecuencia} DÍAS.\nCatálogo:\n${catalogoSimplificado}`;
+      const promptDelUsuario = `PERFIL DEL ATLETA:
+Género: ${respuestas.genero}
+Edad: ${respuestas.edad}
+Peso: ${respuestas.peso_kg || 75} kg
+Estatura: ${respuestas.altura_cm || 170} cm
+Objetivo: ${respuestas.objetivo}
+Nivel: ${respuestas.nivel}
+Días a la semana: ${respuestas.frecuencia}
+Prioridad: ${respuestas.enfoque}
 
-      // ⚡ FIX: BUCLE FOR SEGURO CON 25s TIMEOUT MÁXIMO
+INSTRUCCIÓN: Genera un plan de ${respuestas.frecuencia} días. Usa la REGLA 4 estrictamente si el usuario cumple los criterios de novato/sobrepeso.
+
+Catálogo disponible:
+${catalogoSimplificado}`;
       const maxAttempts = 3;
       let textoCrudo = '';
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 25000); // 25 segundos máximo
-
+const timeoutId = setTimeout(() => controller.abort(), 40000);
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`,
             {
@@ -90,7 +119,7 @@ export const useGeminiRoutine = () => {
         } catch (err: any) {
           if (err.message === 'RATE_LIMIT' || attempt === maxAttempts) throw err;
           const retryTime = Math.min(2000 * Math.pow(2, attempt - 1), 8000);
-          console.warn(`⚠️ Intento IA ${attempt} falló. Reintento en ${retryTime}ms...`);
+          console.warn(` Intento IA ${attempt} falló. Reintento en ${retryTime}ms...`);
           await sleep(retryTime);
         }
       }

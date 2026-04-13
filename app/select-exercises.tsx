@@ -111,6 +111,16 @@ export default function SelectExercisesScreen() {
               </PressableCard>
             );
           }}
+           removeClippedSubviews={true} 
+  maxToRenderPerBatch={10}     
+  windowSize={5}               
+  getItemLayout={(_, index) => ({
+    // ⚠️ ATENCIÓN AQUÍ: Si tus tarjetas miden más de 72px de alto (contando márgenes/padding),
+    // cambia el 72 por la altura real de tu componente.
+    length: 72, 
+    offset: 72 * index,
+    index,
+  })}
         />
       )}
 

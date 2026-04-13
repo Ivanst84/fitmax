@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, StatusBar, ActivityIndicator } from
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
+import ProStatsWidget from '../../components/ui/ProStatsWidget';
 import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useAuth } from '../../hooks/useAuth';
 import { useStreak } from '../../hooks/useStreak';
@@ -176,7 +176,7 @@ export default function ProfileScreen() {
             <MenuOption icon="trash-outline" label="Borrar Cuenta" onPress={handleDeleteAccount} danger />
           </View>
         </View>
-
+<ProStatsWidget />
       </ScrollView>
 
       <CustomAlert 

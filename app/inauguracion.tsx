@@ -1,18 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-
-// 🚀 IMPORTAMOS TU LIBRERÍA DE VIDEO
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { VideoView, useVideoPlayer } from 'expo-video';
 
 import { supabase } from '../lib/supabase'; 
 import { colors, spacing, radius, typography } from '../constants/theme';
 import PressableCard from '../components/ui/PressableCard';
 
-// 🚀 TU CONSTANTE MAESTRA
 const STORAGE_BASE_URL = "https://xvkmfnkzbllpqbwvkudi.supabase.co/storage/v1/object/public/video-ejercicios/";
 
 export default function InauguracionScreen() {
@@ -24,9 +22,14 @@ export default function InauguracionScreen() {
   const [pasoActual, setPasoActual] = useState(0);
   const [terminado, setTerminado] = useState(false);
   const [errorCarga, setErrorCarga] = useState(false);
-  
-  // 🚀 ESTADO PARA SABER LA CARPETA DEL VIDEO (hombres/mujeres)
-  const [carpetaGenero, setCarpetaGenero] = useState("hombres");
+  const [carpetaGenero, setCarpetaGenero] = useState<string | null>(null);
+
+  // 🚀 FIX CLAUDE #1: useRef en lugar de useState para isMounted
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     cargarMiniRutina();
@@ -34,11 +37,10 @@ export default function InauguracionScreen() {
 
   const cargarMiniRutina = async () => {
     try {
-      setErrorCarga(false);
+      if (isMountedRef.current) setErrorCarga(false);
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 1. Obtener género del usuario para construir la URL correcta luego
       const { data: userData } = await supabase
         .from('USUARIOS')
         .select('genero_id')
@@ -46,10 +48,11 @@ export default function InauguracionScreen() {
         .single();
 
       if (userData && userData.genero_id === 2) {
-        setCarpetaGenero("mujeres");
+        if (isMountedRef.current) setCarpetaGenero("mujeres");
+      } else {
+        if (isMountedRef.current) setCarpetaGenero("hombres");
       }
 
-      // 2. Buscamos la primera rutina
       const { data: rutinas, error: errRutinas } = await supabase
         .from('RUTINAS')
         .select('id')
@@ -57,40 +60,32 @@ export default function InauguracionScreen() {
         .limit(1);
 
       if (errRutinas || !rutinas || rutinas.length === 0) {
-        setErrorCarga(true);
+        if (isMountedRef.current) setErrorCarga(true);
         return;
       }
 
       const rutinaId = rutinas[0].id;
 
-      // 3. Cargamos los ejercicios
       const { data: ejs, error: errEjs } = await supabase
         .from('RUTINA_EJERCICIOS')
         .select(`
-          id,
-          orden,
-          series,
-          reps,
-          descanso_seg,
-          EJERCICIOS (
-            nombre,
-            descripcion,
-            video_url
-          )
+          id, orden, series, reps, descanso_seg,
+          EJERCICIOS (nombre, descripcion, video_url)
         `)
         .eq('rutina_id', rutinaId)
         .order('orden', { ascending: true })
         .limit(3);
 
       if (errEjs || !ejs || ejs.length === 0) {
-        setErrorCarga(true);
+        if (isMountedRef.current) setErrorCarga(true);
       } else {
-        setEjercicios(ejs);
+        if (isMountedRef.current) setEjercicios(ejs);
+        await AsyncStorage.removeItem(`inauguracion_pendiente_${user.id}`);
       }
     } catch (error) {
-      setErrorCarga(true);
+      if (isMountedRef.current) setErrorCarga(true);
     } finally {
-      setCargando(false);
+      if (isMountedRef.current) setCargando(false);
     }
   };
 
@@ -109,17 +104,21 @@ export default function InauguracionScreen() {
     router.replace('/(tabs)/home');
   };
 
-  // ─── LÓGICA DEL REPRODUCTOR (Se actualiza al cambiar de paso) ───
   const ejActual = ejercicios[pasoActual];
   const info = ejActual?.EJERCICIOS;
   
-  // Construimos la URL igual que en tu ExerciseDetail
-  const videoUri = info?.video_url ? `${STORAGE_BASE_URL}${carpetaGenero}/${info.video_url}` : null;
+  // 🚀 FIX CLAUDE #2: videoUri calculado con useMemo y validación estricta
+  const videoUri = useMemo(() => {
+    if (!info?.video_url || !carpetaGenero) return null;
+    return `${STORAGE_BASE_URL}${carpetaGenero}/${info.video_url}`;
+  }, [info?.video_url, carpetaGenero]);
 
   const player = useVideoPlayer(videoUri, (p) => {
-    p.loop = true;
-    p.muted = true; // Sin sonido para actuar como GIF
-    p.play(); // Auto-play
+    if (videoUri) {
+      p.loop = true;
+      p.muted = true;
+      p.play();
+    }
   });
 
   if (cargando) {
@@ -162,7 +161,6 @@ export default function InauguracionScreen() {
   return (
     <View style={[s.container, { paddingTop: Math.max(insets.top, 20) }]}>
       <StatusBar barStyle="light-content" />
-      
       <View style={s.header}>
         <TouchableOpacity onPress={salir} style={s.closeBtn}>
           <Ionicons name="close" size={24} color="#fff" />
@@ -176,7 +174,7 @@ export default function InauguracionScreen() {
 
       <View style={s.content}>
         <View style={s.imageContainer}>
-          {/* 🚀 EL REPRODUCTOR NATIVO CON TU LOGICA */}
+          {/* 🚀 FIX CLAUDE #2b: Guard (videoUri && ...) para no renderizar player con null */}
           {videoUri ? (
             <VideoView 
               style={s.image} 
@@ -241,8 +239,6 @@ const s = StyleSheet.create({
   footer: { paddingHorizontal: 20 },
   btnPrincipal: { backgroundColor: colors.primary, height: 60, borderRadius: 30, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 10 },
   btnPrincipalText: { fontSize: 16, fontWeight: '900', color: '#000' },
-  
-  // Victoria / Error
   iconGlow: { width: 140, height: 140, borderRadius: 70, backgroundColor: 'rgba(255, 77, 0, 0.1)', justifyContent: 'center', alignItems: 'center', marginBottom: 30 },
   victoriaTitle: { fontSize: 28, fontWeight: '900', color: '#fff', textAlign: 'center', marginBottom: 10 },
   victoriaSub: { fontSize: 16, color: '#666', textAlign: 'center', lineHeight: 24, marginBottom: 40 },

@@ -3,8 +3,8 @@ import { View, Text, StyleSheet, StatusBar, ActivityIndicator, ScrollView, Alert
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // 🚀 IMPORTANTE AÑADIDO
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Haptics from 'expo-haptics'; 
 
 import StreakWidget from '../../components/ui/StreakWidget';
 import { usePeriodization } from '../../hooks/usePeriodization';
@@ -24,18 +24,16 @@ export default function HomeScreen() {
   const fullName = session?.user?.user_metadata?.full_name || 'Atleta';
   const firstName = fullName.split(' ')[0];  
 
-  const { rutinaHoy, cargando, refetch } = useRoutines();
+  const { rutinaHoy, cargando, refetch, weekStats, perfil } = useRoutines();
   const { data: coachData, loading: loadingCoach, refetch: refetchCoach } = usePeriodization(); 
 
-  const [volumenSemanal, setVolumenSemanal] = useState(0);
-  const [sesionesSemana, setSesionesSemana] = useState(0);
-  const [metaSesiones, setMetaSesiones] = useState(3);
-  const [cargandoStats, setCargandoStats] = useState(true);
-  
   const [evolucionando, setEvolucionando] = useState(false);
-
-  // 🚀 ESTADO PARA EL DÍA 0 (TICKET DORADO)
   const [mostrarInauguracion, setMostrarInauguracion] = useState(false);
+
+  const volumenSemanal = weekStats?.volumen_total || 0;
+  const sesionesSemana = weekStats?.sesiones || 0;
+  const metaSesiones = perfil?.dias_entrenamiento?.length || 3;
+  const cargandoStats = cargando;
 
   useEffect(() => {
     if (coachData) {
@@ -43,59 +41,31 @@ export default function HomeScreen() {
     }
   }, [coachData]);
 
-  const fetchEstadisticas = useCallback(async () => {
-    if (!session?.user?.id) return;
-    try {
-      const hoy = new Date();
-      const diaSemana = hoy.getDay() || 7; 
-      const lunes = new Date(hoy);
-      lunes.setDate(hoy.getDate() - diaSemana + 1);
-      lunes.setHours(0, 0, 0, 0);
-
-      const { data: homeData, error: homeError } = await supabase.rpc('get_home_data', {
-        p_week_start: lunes.toISOString()
-      });
-
-      if (!homeError && homeData) {
-        setVolumenSemanal(homeData.stats_semana?.volumen_total || 0);
-        setSesionesSemana(homeData.stats_semana?.sesiones || 0);
-        if (homeData.perfil?.dias_entrenamiento) {
-          setMetaSesiones(homeData.perfil.dias_entrenamiento.length);
-        }
-      }
-    } catch (err) {
-      console.error("Error cargando Home Stats:", err);
-    }
-  }, [session?.user?.id]);
-
   useFocusEffect(
     useCallback(() => {
       let isActive = true;
       const sincronizarHome = async () => {
         if (!session?.user?.id) return;
-        setCargandoStats(true);
         
         processOfflineQueue().catch(console.warn); 
 
-        // 🚀 VERIFICAR SI TIENE EL TICKET DE INAUGURACIÓN PENDIENTE
         const ticket = await AsyncStorage.getItem(`inauguracion_pendiente_${session.user.id}`);
         if (ticket === 'true' && isActive) {
           setMostrarInauguracion(true);
+        } else if (isActive) {
+          setMostrarInauguracion(false); // Refresca por si el ticket se destruyó
         }
 
         await Promise.all([
-          fetchEstadisticas(),
           refetch(),
           refetchCoach()
         ]);
-
-        if (isActive) setCargandoStats(false);
       };
       
       sincronizarHome();
 
       return () => { isActive = false; };
-    }, [session?.user?.id, fetchEstadisticas, refetch, refetchCoach])
+    }, [session?.user?.id, refetch, refetchCoach])
   );
 
   const initials = useMemo(() => {
@@ -103,23 +73,15 @@ export default function HomeScreen() {
     return fullNameStr.substring(0, 2).toUpperCase();
   }, [session?.user]);
 
-  // 🚀 LÓGICA PARA INICIAR LA RUTINA FANTASMA Y ROMPER EL TICKET
+  // 🚀 FIX #8: Navegamos ANTES de destruir el ticket. El ticket se destruirá en la sig. pantalla.
   const iniciarMiniRutina = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    
     if (session?.user?.id) {
-      // 1. Destruimos el ticket para que este banner no vuelva a salir jamás
-      await AsyncStorage.removeItem(`inauguracion_pendiente_${session.user.id}`);
-      setMostrarInauguracion(false);
-      
-      // 2. Lo mandamos a la ruta de la rutina de inauguración (Tendremos que crear este archivo después)
+      setMostrarInauguracion(false); // Ocultar visualmente al instante
       router.push('/inauguracion'); 
     }
   };
 
-  // ============================================================================
-  // 🧠 LÓGICA DE EVOLUCIÓN - FIX: OPTIMIZACIÓN N+1 (Batch Update)
-  // ============================================================================
   const handleRegenerarRutina = async () => {
     try {
       setEvolucionando(true);
@@ -148,19 +110,11 @@ export default function HomeScreen() {
             let nuevosDescansos = parseInt(ej.descanso_seg);
             const objId = parseInt(rutina.objetivo_id);
 
-            if (objId === 1 || objId === 3) { 
-              nuevosDescansos = Math.max(30, nuevosDescansos - 15); 
-            } else if (objId === 2) { 
-              nuevasSeries = nuevasSeries + 1;
-            } else if (objId === 5) { 
-              nuevosDescansos = nuevosDescansos + 30; 
-            }
+            if (objId === 1 || objId === 3) { nuevosDescansos = Math.max(30, nuevosDescansos - 15); } 
+            else if (objId === 2) { nuevasSeries = nuevasSeries + 1; } 
+            else if (objId === 5) { nuevosDescansos = nuevosDescansos + 30; }
 
-            return {
-              ...ej,
-              series: nuevasSeries,
-              descanso_seg: nuevosDescansos
-            };
+            return { ...ej, series: nuevasSeries, descanso_seg: nuevosDescansos };
           })
       );
 
@@ -245,7 +199,6 @@ export default function HomeScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         
-        {/* 🚀 BANNER DE INAUGURACIÓN (Aparece primero) */}
         {mostrarInauguracion && (
           <TouchableOpacity 
             activeOpacity={0.9} 
@@ -286,11 +239,7 @@ export default function HomeScreen() {
                 backgroundColor: coachData.plateau_detectado ? colors.primary : colors.surfaceLight,
                 justifyContent: 'center', alignItems: 'center'
               }}>
-                <Ionicons 
-                  name={coachData.plateau_detectado ? "flash" : "analytics"} 
-                  size={20} 
-                  color={coachData.plateau_detectado ? "#000" : colors.primary} 
-                />
+                <Ionicons name={coachData.plateau_detectado ? "flash" : "analytics"} size={20} color={coachData.plateau_detectado ? "#000" : colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '900', fontSize: 10 }}>
@@ -340,9 +289,7 @@ export default function HomeScreen() {
           <Text style={styles.sectionTitle}>Tu plan de hoy</Text>
           <View style={styles.headerActions}>
             <PressableCard onPress={async () => { 
-                setCargandoStats(true); 
-                await Promise.all([refetch(), fetchEstadisticas(), refetchCoach()]); 
-                setCargandoStats(false); 
+                await Promise.all([refetch(), refetchCoach()]); 
               }} 
               style={styles.iconButton}>
               <Ionicons name="refresh" size={22} color={colors.textSecondary} />
@@ -363,13 +310,10 @@ const styles = StyleSheet.create({
   appName: { ...typography.h1 },
   avatarContainer: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primaryFaded, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.primary },
   avatarText: { ...typography.small, color: colors.primary, fontWeight: '900' },
-  
-  // 🚀 Estilos del nuevo Banner de Inauguración
   bannerInauguracion: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 77, 0, 0.1)', padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.primary, marginBottom: spacing.lg },
   inauguracionIconBox: { width: 48, height: 48, borderRadius: 24, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
   bannerInauguracionTitle: { ...typography.label, color: colors.primary, marginBottom: 4 },
   bannerInauguracionSub: { ...typography.small, color: colors.textSecondary },
-
   banner: { backgroundColor: colors.surface, padding: spacing.lg, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border },
   bannerTitle: { ...typography.label, marginBottom: 4 },
   bannerSub: { ...typography.small, marginBottom: spacing.md },

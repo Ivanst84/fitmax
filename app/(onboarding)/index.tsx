@@ -16,7 +16,6 @@ import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useGeminiRoutine } from '../../hooks/useGeminiRoutine';
 
 import PressableCard from '../../components/ui/PressableCard';
-// 🚀 PASO 1: Importamos el nuevo componente de calibración
 import GhostCalibration from '../../components/ui/GhostCalibration';
 
 const DIAS_SEMANA = [
@@ -52,7 +51,6 @@ export default function OnboardingScreen() {
   const [generando, setGenerando] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState(0);
   
-  // 🚀 PASO 2: Estado para mostrar la calibración
   const [mostrarCalibracion, setMostrarCalibracion] = useState(false);
 
   const [pesoInput, setPesoInput] = useState('75');
@@ -118,7 +116,6 @@ export default function OnboardingScreen() {
   };
 
 const finalizarCuestionario = async (perfilFinal: any) => {
-    // El juego ahora es nuestra "pantalla de carga".
     setMostrarCalibracion(true);
     setGenerando(false); 
 
@@ -127,8 +124,37 @@ const finalizarCuestionario = async (perfilFinal: any) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuario no encontrado');
 
-      // 2. Preparar catálogo
-      let query = supabase.from('EJERCICIOS').select('id, nombre');
+      // 🚀 BARRERA ANTI-DUPLICADOS
+      const { data: rutinasExistentes } = await supabase
+        .from('RUTINAS')
+        .select('id')
+        .eq('user_id', user.id)
+        .limit(1);
+
+      if (rutinasExistentes && rutinasExistentes.length > 0) {
+        console.log('⚠️ El usuario ya tenía rutinas. Rescatando estado y evitando duplicados.');
+        await AsyncStorage.setItem(`onboarding_${user.id}`, 'true');
+        router.replace('/(tabs)/home');
+        return;
+      }
+
+      // 2A. 🚀 FIX ANTI-CRASH: Traer el mapa de músculos primero (Cero ambigüedad)
+      const { data: musculosDB } = await supabase.from('CAT_MUSCULOS').select('id, grupo_key');
+      const mapaMusculos: Record<number, string> = {};
+      if (musculosDB) {
+        musculosDB.forEach(m => {
+          mapaMusculos[m.id] = m.grupo_key;
+        });
+      }
+
+      // 2B. Traer ejercicios sin hacer JOINs para que Supabase no se confunda
+      let query = supabase.from('EJERCICIOS').select(`
+        id, 
+        nombre,
+        nivel_id,
+        es_por_tiempo,
+        musculo_id
+      `);
 
       if (perfilFinal.equipo === 'casa') {
         query = query.in('equipo_id', [1]); 
@@ -136,29 +162,55 @@ const finalizarCuestionario = async (perfilFinal: any) => {
         query = query.in('equipo_id', [1, 2]); 
       }
 
-      if (perfilFinal.enfoque === 'superior') {
-        query = query.in('musculo_id', [1, 2, 3, 4, 5, 6, 7, 8, 9]); 
-      } else if (perfilFinal.enfoque === 'inferior') {
-        query = query.in('musculo_id', [8, 9, 10, 11, 12, 13]); 
+      const { data: catalogoDB, error: errorCat } = await query;
+      
+      if (errorCat) {
+        console.error("❌ Error de Supabase:", errorCat.message);
+        throw new Error('No se pudo cargar el catálogo filtrado');
+      }
+      if (!catalogoDB) throw new Error('El catálogo está vacío');
+
+      // 2C. Inyectar el grupo muscular a los ejercicios manualmente (Ultra rápido)
+      const catalogoConGrupos = catalogoDB.map((ej: any) => ({
+        ...ej,
+        CAT_MUSCULOS: { grupo_key: mapaMusculos[ej.musculo_id] || 'other' }
+      }));
+      
+      // 🔥 LA LICUADORA INTELIGENTE (Smart Blender)
+      let catalogoOptimizado = catalogoConGrupos; // Usamos el nuevo array seguro
+
+      if (perfilFinal.enfoque !== 'fullbody') {
+        const shuffle = (arr: any[]) => [...arr].sort(() => 0.5 - Math.random());
+        
+        const upper = catalogoConGrupos.filter((e: any) => e.CAT_MUSCULOS.grupo_key === 'upper_body');
+        const lower = catalogoConGrupos.filter((e: any) => e.CAT_MUSCULOS.grupo_key === 'lower_body');
+        const core = catalogoConGrupos.filter((e: any) => e.CAT_MUSCULOS.grupo_key === 'core' || e.CAT_MUSCULOS.grupo_key === 'general');
+
+        if (perfilFinal.enfoque === 'superior') {
+          catalogoOptimizado = [
+            ...shuffle(upper).slice(0, 30), 
+            ...shuffle(lower).slice(0, 10), 
+            ...shuffle(core).slice(0, 10)    
+          ];
+        } else if (perfilFinal.enfoque === 'inferior') {
+          catalogoOptimizado = [
+            ...shuffle(lower).slice(0, 30), 
+            ...shuffle(upper).slice(0, 10), 
+            ...shuffle(core).slice(0, 10)
+          ];
+        }
       }
 
-      const { data: catalogoDB, error: errorCat } = await query;
-      if (errorCat || !catalogoDB) throw new Error('No se pudo cargar el catálogo filtrado');
-      
-      // 3. 🧠 LLAMADA A GEMINI (Esto ocurre mientras el usuario juega/calibra)
-      const planFinal = await generateRoutine(perfilFinal, catalogoDB);
+      // 3. 🧠 LLAMADA A GEMINI 
+      const planFinal = await generateRoutine(perfilFinal, catalogoOptimizado);
 
-      // 🚀 LÓGICA PURA Y ESTRICTA (Respeto absoluto al usuario)
-      // Ordenamos los días que el usuario seleccionó explícitamente [Ej: 1, 3, 5]
+      // LÓGICA PURA Y ESTRICTA
       const agendaOrdenada = [...perfilFinal.dias_entrenamiento].sort((a, b) => a - b);
 
       // 4. Guardar Rutinas y Ejercicios
       await Promise.all(planFinal.map(async (diaIA: any, index: number) => {
         
-        // Asignamos el día de la semana estrictamente al orden elegido
         const diaSemanaAsignado = agendaOrdenada[index % agendaOrdenada.length];
-        
-        // Nombre estricto: "Día 1 - Fuerza", "Día 2 - Fuerza", etc.
         const nombreFinal = `Día ${index + 1} - ${diaIA.dia_nombre}`;
 
         const { data: rutinaData, error: errR } = await supabase
@@ -240,7 +292,7 @@ const finalizarCuestionario = async (perfilFinal: any) => {
 
       // 7. Marcar Onboarding como completado Y generar Ticket Dorado
       await AsyncStorage.setItem(`onboarding_${user.id}`, 'true');
-      await AsyncStorage.setItem(`inauguracion_pendiente_${user.id}`, 'true'); // 🔥 EL TICKET
+      await AsyncStorage.setItem(`inauguracion_pendiente_${user.id}`, 'true');
 
     } catch (e: any) {
       console.error(' FALLO TOTAL EN SEGUNDO PLANO:', e.message);
@@ -285,7 +337,6 @@ const finalizarCuestionario = async (perfilFinal: any) => {
             <Text style={s.unitText}>{infoPaso.id === 'peso' ? 'kg' : 'cm'}</Text>
           </View>
           
-          {/* 🚀 FIX: Contenido envuelto en View para evitar deformaciones */}
           <PressableCard style={s.continueBtn} onPress={handleCustomNext}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Text style={s.continueBtnText}>Continuar</Text>
@@ -317,7 +368,6 @@ const finalizarCuestionario = async (perfilFinal: any) => {
           </View>
           <Text style={s.daysHelperText}>Has seleccionado {diasSeleccionados.length} días</Text>
           
-          {/* 🚀 FIX: Botón de continuar consistente */}
           <TouchableOpacity 
             style={s.continueBtn}
             activeOpacity={0.8}
