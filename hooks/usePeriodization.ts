@@ -9,6 +9,7 @@ interface PeriodizationData {
   volumen_anterior: number;
   plateau_detectado: boolean;
   mensaje_coach: string;
+  dias_en_fase?: number;
 }
 
 export function usePeriodization() {

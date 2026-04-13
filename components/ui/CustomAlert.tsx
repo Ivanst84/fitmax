@@ -128,7 +128,6 @@ const s = StyleSheet.create({
   title: { ...typography.h2, textAlign: 'center', marginBottom: 6 },
   message: { ...typography.small, textAlign: 'center', color: colors.textSecondary, marginBottom: 20, paddingHorizontal: 10 },
   
-  // 🚀 FIX: Flexbox corregido para alineación perfecta
   buttonRow: { 
     flexDirection: 'row', 
     width: '100%',
@@ -136,7 +135,6 @@ const s = StyleSheet.create({
     justifyContent: 'space-between'
   },
   
-  // 🚀 FIX: paddingVertical reducido de 14 a 11 para quitar lo "gordo"
   cancelBtn: { 
     flex: 1, 
     paddingVertical: 11, 
@@ -147,7 +145,6 @@ const s = StyleSheet.create({
   },
   cancelText: { ...typography.label, color: '#A0A0A0', fontWeight: '600' },
   
-  // 🚀 FIX: Mismo padding y radio que el botón de cancelar
   confirmBtn: { 
     flex: 1, 
     paddingVertical: 11, 

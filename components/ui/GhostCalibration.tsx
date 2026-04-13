@@ -67,12 +67,13 @@ export default function GhostCalibration({ onFinish }: GhostCalibrationProps) {
   };
 
   // 🚀 JUSTIFICACIONES CIENTÍFICAS DINÁMICAS
+ // 🚀 JUSTIFICACIONES HONESTAS (Gamificación sin mentiras)
   const getChallengeData = () => {
     switch (mode) {
-      case 'taps': return { instr: "FRECUENCIA MOTORA", desc: "Toca el núcleo para medir la velocidad de disparo neuronal." };
-      case 'shake': return { instr: "REACTIVIDAD", desc: "Agita para calibrar la estabilidad de tus fibras rápidas." };
-      case 'punch': return { instr: "POTENCIA EXPLOSIVA", desc: "Lanza golpes al aire para medir tu pico de aceleración (RFD)." };
-      case 'static': return { instr: "TENSIÓN CENTRAL", desc: "Aprieta con firmeza para medir tu capacidad isométrica máxima." };
+      case 'taps': return { instr: "RETO DE VELOCIDAD", desc: "Toca el núcleo rápido para medir tu tiempo de reacción." };
+      case 'shake': return { instr: "RETO DE ACTIVACIÓN", desc: "¡Despierta! Agita el teléfono con energía." };
+      case 'punch': return { instr: "PRUEBA DE REFLEJOS", desc: "Lanza golpes al aire para medir tu aceleración." };
+      case 'static': return { instr: "ENFOQUE MENTAL", desc: "Aprieta con firmeza y mantén la mayor estabilidad posible." };
       default: return { instr: "", desc: "" };
     }
   };
@@ -80,9 +81,9 @@ export default function GhostCalibration({ onFinish }: GhostCalibrationProps) {
   const challengeInfo = getChallengeData();
 
   const getResultMessage = () => {
-    if (score === 0) return { title: "CALIBRACIÓN ESTÁNDAR", phrase: "No se detectó pico de activación. Usaremos parámetros base.", color: colors.textMuted };
-    if (score < 25) return { title: "PERFIL RESISTENCIA", phrase: "Sincronización optimizada para volumen. Ajustando descansos para hipertrofia.", color: colors.primary };
-    return { title: "PERFIL EXPLOSIVO", phrase: "Alta respuesta del SNC detectada. Priorizaremos cargas reactivas hoy.", color: colors.success };
+    if (score === 0) return { title: "CALIBRACIÓN ESTÁNDAR", phrase: "Modo base activado. Listo para empezar.", color: colors.textMuted };
+    if (score < 25) return { title: "PERFIL CONSTANTE", phrase: "Ritmo estable detectado. Optimizando rutina.", color: colors.primary };
+    return { title: "PERFIL EXPLOSIVO", phrase: "¡Gran energía! Ajustando para un entrenamiento dinámico.", color: colors.success };
   };
 
   const res = getResultMessage();
@@ -91,13 +92,13 @@ export default function GhostCalibration({ onFinish }: GhostCalibrationProps) {
     <View style={[s.container, flashActive && { backgroundColor: '#021102' }]}>
       <StatusBar barStyle="light-content" />
       
-      {step === 'intro' && (
+     {step === 'intro' && (
         <View style={s.center}>
           <Ionicons name="flash" size={80} color={colors.primary} />
-          <Text style={s.title}>PROTOCOLO DE ACTIVACIÓN</Text>
-          <Text style={s.desc}>Para vincular tu sistema nervioso con la IA, necesitamos medir tu nivel de explosividad actual.</Text>
+          <Text style={s.title}>RETO DE ACTIVACIÓN</Text>
+          <Text style={s.desc}>Para adaptar el entrenamiento a ti hoy, vamos a hacer un rápido mini-juego de calentamiento.</Text>
           <TouchableOpacity style={s.mainBtn} onPress={() => setStep('selector')}>
-            <Text style={s.mainBtnText}>INICIAR SINCRONIZACIÓN</Text>
+            <Text style={s.mainBtnText}>ELEGIR RETO</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -105,16 +106,15 @@ export default function GhostCalibration({ onFinish }: GhostCalibrationProps) {
       {step === 'selector' && (
         <View style={s.center}>
           <Text style={s.title}>ELIGE TU TEST</Text>
-          <Text style={s.selectorSub}>Cada test calibra un aspecto diferente de tu rendimiento biológico.</Text>
+          <Text style={s.selectorSub}>Supera un reto rápido antes de empezar a levantar peso.</Text>
           <View style={s.grid}>
-            <ModeCard icon="finger-print" title="MOTOR" desc="Frecuencia Neuronal" onPress={() => startChallenge('taps')} />
-            <ModeCard icon="flash" title="REACTIVO" desc="Fibras Rápidas" onPress={() => startChallenge('shake')} />
-            <ModeCard icon="rocket" title="POTENCIA" desc="Aceleración RFD" onPress={() => startChallenge('punch')} />
-            <ModeCard icon="lock-closed" title="TENSIÓN" desc="Fuerza Isométrica" onPress={() => startChallenge('static')} />
+            <ModeCard icon="finger-print" title="VELOCIDAD" desc="Reacción" onPress={() => startChallenge('taps')} />
+            <ModeCard icon="flash" title="ACTIVACIÓN" desc="Energía" onPress={() => startChallenge('shake')} />
+            <ModeCard icon="rocket" title="REFLEJOS" desc="Aceleración" onPress={() => startChallenge('punch')} />
+            <ModeCard icon="lock-closed" title="ENFOQUE" desc="Estabilidad" onPress={() => startChallenge('static')} />
           </View>
         </View>
       )}
-
       {step === 'challenge' && (
         <View style={s.center}>
           <View style={[s.instructionBox, flashActive && { borderColor: colors.success }]}>
@@ -138,19 +138,19 @@ export default function GhostCalibration({ onFinish }: GhostCalibrationProps) {
           </Animated.View>
 
           <View style={s.trackerWrapper}>
-            <Text style={s.scoreLabel}>ANALIZANDO RESPUESTA NEUROMUSCULAR</Text>
+            <Text style={s.scoreLabel}>ANALIZANDO MOVIMIENTO </Text>
             <Text style={[s.scoreValue, flashActive && { color: colors.success }]}>{Math.floor(score * 2.5)}%</Text>
             <GhostTracker currentKg="0" currentReps={score.toString()} ghostSets={[{kg:0, reps: 40, completed: false}]} setIndex={0} />
           </View>
         </View>
       )}
 
-      {step === 'result' && (
+ {step === 'result' && (
         <View style={s.center}>
           <Ionicons name="shield-checkmark" size={80} color={res.color} />
           <Text style={[s.title, { color: res.color }]}>{res.title}</Text>
           <View style={s.resultCard}>
-            <Text style={s.ghostIdentity}>SNC CALIBRADO CON ÉXITO</Text>
+            <Text style={s.ghostIdentity}>RETO COMPLETADO CON ÉXITO</Text>
             <Text style={s.ghostPhrase}>"{res.phrase}"</Text>
           </View>
           <TouchableOpacity style={s.mainBtn} onPress={onFinish}>

@@ -1,15 +1,46 @@
 import { useState } from 'react';
 
+// 🚀 EXTRACTOR BLINDADO: Ignora texto antes o después del JSON
 const intentarRecuperarJSON = (texto: string | undefined | null) => {
   if (!texto) throw new Error("La IA no respondió. Intenta de nuevo.");
+  
   let limpio = texto.replace(/```json/g, '').replace(/```/g, '').trim();
-  try { return JSON.parse(limpio); } catch (e) {
+  
+  // Intento 1: Parseo directo (si la IA se portó bien)
+  try { 
+    return JSON.parse(limpio); 
+  } catch (e) {
+    // Intento 2: Extracción por fuerza bruta (buscar el arreglo [...])
     try {
-      const inicio = limpio.indexOf('['); const fin = limpio.lastIndexOf(']');
-      if (inicio !== -1 && fin !== -1) return JSON.parse(limpio.substring(inicio, fin + 1));
-    } catch (innerError) { throw new Error("Formato de rutina inválido."); }
+      const matchArray = limpio.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (matchArray) return JSON.parse(matchArray[0]);
+
+      // Intento 3: Por si lo envolvió en un objeto { "rutina": [...] }
+      const matchObj = limpio.match(/\{\s*"[\s\S]*\}\s*/);
+      if (matchObj) return JSON.parse(matchObj[0]);
+    } catch (innerError) {
+      console.error("❌ RAW ERROR IA:", limpio); // Para ver qué tontería mandó la IA
+      throw new Error("Formato de rutina inválido.");
+    }
   }
+  
+  console.error("❌ RAW TEXTO IMPARSEABLE:", limpio);
   throw new Error("No se pudo procesar la respuesta de la IA.");
+};
+
+// 🛡️ FUNCIÓN DE SEGURIDAD CLÍNICA (FUERA DE LA IA)
+const obtenerReemplazoSeguro = (nombreMalo: string, catalogo: any[]) => {
+  const n = nombreMalo.toLowerCase();
+  let keyword = '';
+  
+  if (n.includes('jumping') || n.includes('burpee') || n.includes('cuerda')) keyword = 'marcha'; 
+  else if (n.includes('sentadilla') || n.includes('barra')) keyword = 'silla'; 
+  else if (n.includes('flexion') || n.includes('push')) keyword = 'inclinada'; 
+  else if (n.includes('climber')) keyword = 'plancha'; 
+
+  let seguro = catalogo.find(c => c.nombre.toLowerCase().includes(keyword) && c.nivel_id === 1);
+  if (!seguro) seguro = catalogo.find(c => c.nivel_id === 1 && !c.nombre.toLowerCase().includes('jumping')); 
+  return seguro;
 };
 
 export const useGeminiRoutine = () => {
@@ -23,7 +54,6 @@ export const useGeminiRoutine = () => {
     if (!apiKey) throw new Error("Falta la clave de Gemini");
 
     try {
-         // 1. PRE-FILTRO (OPTIMIZADO PARA AHORRAR TOKENS)
       let nivelUsuarioNum = 2; 
       const nivelStr = String(respuestas.nivel).toLowerCase();
       if (nivelStr.includes('principiante') || respuestas.nivel === 1) nivelUsuarioNum = 1;
@@ -39,14 +69,14 @@ export const useGeminiRoutine = () => {
       if (objId === 5) numEjercicios = Math.max(3, numEjercicios - 2); 
       else if (objId === 1 || objId === 3) numEjercicios = numEjercicios + 1; 
 
-      // 🔥 FILTRO MÁS ESTRICTO + LÍMITE MÁS BAJO (esto es lo que ahorra tokens)
+      const requiereBajoImpacto = nivelUsuarioNum === 1 || (respuestas.peso_kg && respuestas.peso_kg > 85);
+
       let catalogoFiltrado = catalogoEjercicios.filter(ej => {
         const niv = ej.nivel_id || 1;
-        if (nivelUsuarioNum === 1) return niv === 1;           // Principiante → SOLO nivel 1
-        return niv <= nivelUsuarioNum;                         // Intermedio/Avanzado → como antes
+        if (nivelUsuarioNum === 1) return niv === 1;
+        return niv <= nivelUsuarioNum;
       });
 
-      // Reducimos el máximo a 45 ejercicios (antes 70) → mucho menos tokens
       if (catalogoFiltrado.length > 45) {
         catalogoFiltrado = catalogoFiltrado.sort(() => 0.5 - Math.random()).slice(0, 45);
       }
@@ -55,42 +85,34 @@ export const useGeminiRoutine = () => {
       const catalogoSimplificado = catalogoFiltrado.map((ej, index) => {
         const idCorto = index + 1;
         mapaReferencia[idCorto] = ej.id;
-        const infoExtra = ej.es_por_tiempo ? ' (Segundos)' : '';
-        return `#${idCorto}: ${ej.nombre}${infoExtra}`;
+        return `#${idCorto}: ${ej.nombre}`;
       }).join('\n');
-     const systemInstruction = `Eres un Master Coach Experto y Fisioterapeuta. REGLAS ESTRICTAS E INQUEBRANTABLES:
-1. ESTRUCTURA: EXACTAMENTE ${numEjercicios} ejercicios por día. El ejercicio #1 SIEMPRE es calentamiento (cal: true), el resto fuerza/hipertrofia (cal: false).
-2. CALENTAMIENTO INTELIGENTE: Varía el calentamiento cada día.
-3. BALANCE ANATÓMICO: En rutinas de 3+ días, NUNCA omitas las piernas. Si piden "Tren Superior", haz un split lógicamente compensado (ej. 80% arriba, 20% abajo).
-4. PROTOCOLO CLÍNICO (PRINCIPIANTES Y SOBREPESO): Si el nivel es 'principiante' o el peso es >85kg, ASUME QUE NUNCA HAN ENTRENADO. 
-   - PROHIBIDO: Saltos (Jumping Jacks, Burpees), flexiones completas, sentadillas con barra.
-   - OBLIGATORIO: Selecciona ÚNICAMENTE ejercicios marcados con [BAJO IMPACTO] o regresiones de nivel 1. 
-   - ISOMETRÍAS: Planchas máximo de 15s a 20s. Nunca más.
-5. ADAPTACIÓN DE VOLUMEN (t, s, r): Si el objetivo es perder peso, descansos (t) de 45s-60s. Si es fuerza, descansos (t) de 90s-120s. 
-6. FORMATO: Usa SOLO IDs numéricos del catálogo. 'desc': MÁXIMO 5 PALABRAS.
-Responde ÚNICAMENTE en este JSON estricto: [{"d":1,"n":"Nombre Rutina","desc":"Máximo 5 palabras","ejs":[{"id":numero,"s":series,"r":"reps_o_seg","t":descanso,"cal":true_o_false}]}]`;
 
-      const promptDelUsuario = `PERFIL DEL ATLETA:
+      // 🚀 PROMPT LIMPIO Y DIRECTO AL GRANO
+      const systemInstruction = `Eres un Master Coach. REGLAS ESTRICTAS:
+1. ESTRUCTURA: EXACTAMENTE ${numEjercicios} ejercicios por día. Ejercicio #1 siempre es calentamiento (cal: true).
+2. CLÍNICA: Si el usuario es principiante o pesa >85kg, NUNCA incluyas Saltos, Burpees ni flexiones en piso. Usa variantes de bajo impacto.
+3. FORMATO DE RESPUESTA: DEVUELVE ÚNICA Y EXCLUSIVAMENTE UN ARREGLO JSON. CERO PALABRAS ANTES O DESPUÉS.
+[{"d":1,"n":"Nombre Rutina","desc":"Breve","ejs":[{"id":numero_del_catalogo,"s":3,"r":"12","t":60,"cal":true}]}]`;
+
+      const promptDelUsuario = `PERFIL:
 Género: ${respuestas.genero}
 Edad: ${respuestas.edad}
 Peso: ${respuestas.peso_kg || 75} kg
-Estatura: ${respuestas.altura_cm || 170} cm
-Objetivo: ${respuestas.objetivo}
 Nivel: ${respuestas.nivel}
-Días a la semana: ${respuestas.frecuencia}
-Prioridad: ${respuestas.enfoque}
+Días: ${respuestas.frecuencia}
+Enfoque: ${respuestas.enfoque}
 
-INSTRUCCIÓN: Genera un plan de ${respuestas.frecuencia} días. Usa la REGLA 4 estrictamente si el usuario cumple los criterios de novato/sobrepeso.
-
-Catálogo disponible:
+Catálogo:
 ${catalogoSimplificado}`;
+      
       const maxAttempts = 3;
       let textoCrudo = '';
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           const controller = new AbortController();
-const timeoutId = setTimeout(() => controller.abort(), 40000);
+          const timeoutId = setTimeout(() => controller.abort(), 40000);
           const response = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`,
             {
@@ -99,56 +121,64 @@ const timeoutId = setTimeout(() => controller.abort(), 40000);
               body: JSON.stringify({
                 system_instruction: { parts: [{ text: systemInstruction }] },
                 contents: [{ role: 'user', parts: [{ text: promptDelUsuario }] }],
-                generationConfig: { temperature: 0.2, response_mime_type: "application/json" },
+                generationConfig: { temperature: 0.1, response_mime_type: "application/json" },
               }),
               signal: controller.signal
             }
           );
           clearTimeout(timeoutId);
 
-          if (!response.ok) {
-            if (response.status === 429) throw new Error('RATE_LIMIT');
-            throw new Error(`HTTP ${response.status}`);
-          }
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
           const data = await response.json();
-          if (data.usageMetadata) console.log("📊 TOKENS:", { env: data.usageMetadata.promptTokenCount, rec: data.usageMetadata.candidatesTokenCount });
-          
           textoCrudo = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          break; // Salió bien, rompemos el loop
+          break; 
         } catch (err: any) {
-          if (err.message === 'RATE_LIMIT' || attempt === maxAttempts) throw err;
-          const retryTime = Math.min(2000 * Math.pow(2, attempt - 1), 8000);
-          console.warn(` Intento IA ${attempt} falló. Reintento en ${retryTime}ms...`);
-          await sleep(retryTime);
+          if (attempt === maxAttempts) throw err;
+          await sleep(2000);
         }
       }
 
       const resJSON = intentarRecuperarJSON(textoCrudo);        
-     const diasRaw = Array.isArray(resJSON) 
-  ? resJSON 
-  : (resJSON.plan || resJSON.rutina || resJSON.days || resJSON.dias || []);
+      const diasRaw = Array.isArray(resJSON) ? resJSON : (resJSON.plan || resJSON.rutina || resJSON.days || resJSON.dias || []);
 
-if (diasRaw.length === 0) {
-  throw new Error("La IA devolvió un plan vacío. Intenta ajustar tus parámetros.");
-}
+      if (diasRaw.length === 0) throw new Error("La IA devolvió un plan vacío.");
 
       return diasRaw.map((dia: any, index: number) => ({
         dia_semana_sugerido: dia.d || index + 1,
         dia_nombre: dia.n || `Día ${index + 1}`,
         descripcion: dia.desc || "Entrenamiento del día",
-        ejercicios: (dia.ejs || []).map((e: any, idx: number) => ({
-          ejercicio_id: mapaReferencia[Number(e.id)] || e.id,
-          series: e.s || 3,
-          repeticiones: String(e.r || "12"),
-          descanso_segundos: e.t || 60,
-          es_calentamiento: e.cal === true, 
-          orden: idx + 1
-        })),
+        ejercicios: (dia.ejs || []).map((e: any, idx: number) => {
+          
+          let finalEjercicioId = mapaReferencia[Number(e.id)] || e.id;
+
+          // 🛡️ LÓGICA SMART SWAP
+          if (requiereBajoImpacto) {
+            const ejOriginal = catalogoEjercicios.find(c => c.id === finalEjercicioId);
+            if (ejOriginal) {
+              const n = ejOriginal.nombre.toLowerCase();
+              const prohibidos = ['jumping', 'burpee', 'cuerda', 'climber', 'sentadilla con barra', 'push-up'];
+              
+              if (prohibidos.some(p => n.includes(p)) || n === 'flexiones') {
+                const reemplazoSeguro = obtenerReemplazoSeguro(ejOriginal.nombre, catalogoEjercicios);
+                if (reemplazoSeguro) finalEjercicioId = reemplazoSeguro.id;
+              }
+            }
+          }
+
+          return {
+            ejercicio_id: finalEjercicioId,
+            series: e.s || 3,
+            repeticiones: String(e.r || "12"),
+            descanso_segundos: e.t || 60,
+            es_calentamiento: e.cal === true, 
+            orden: idx + 1
+          };
+        }),
       }));
 
     } catch (err: any) {
-      console.error("❌ Error useGeminiRoutine:", err.message);
+      console.error("Error useGeminiRoutine:", err.message);
       setError("No se pudo generar la rutina. Revisa tu conexión.");
       throw err;
     } finally { setLoading(false); }

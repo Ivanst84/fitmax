@@ -80,7 +80,7 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     setSetsData({ ...setsData, [exerciseId]: newSets });
   };
 
-  const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: number, vol: number, sets: number, kcal: number) => {
+const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: number, vol: number, sets: number, kcal: number) => {
     try {
       setIsSaving(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -105,10 +105,48 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
         series_json: setsData[ex.id] || [] 
       }));
 
+      // 1. GUARDAMOS EL HISTORIAL NORMAL
       const result = await saveSessionWithFallback(sessionPayload, exerciseLogs);
 
+      // ---------------------------------------------------------
+      // 🚀 2. CEREBRO COACH: SOBRECARGA PROGRESIVA AUTOMÁTICA
+      // ---------------------------------------------------------
+      const calcularSiguienteObjetivo = (pesoActual: number, completadoExitosamente: boolean): number => {
+        if (!completadoExitosamente || pesoActual <= 0) return pesoActual; 
+        const incremento = 1.025; // Aumento exacto del 2.5%
+        let nuevoPeso = pesoActual * incremento;
+        return Math.round(nuevoPeso / 1.25) * 1.25; 
+      };
+
+      console.log("🧠 COACH: Evaluando Sobrecarga Progresiva...");
+      
+      for (const ex of activeExercises) {
+        const seriesDeEsteEjercicio = setsData[ex.id] || [];
+        
+        // Verifica que tenga series y que TODAS tengan completed: true
+        const todasCompletadas = seriesDeEsteEjercicio.length > 0 && seriesDeEsteEjercicio.every((s: any) => s.completed === true);
+        
+        if (todasCompletadas) {
+          // Toma el peso usado de la primera serie
+          const pesoUsado = parseFloat(seriesDeEsteEjercicio[0].kg) || 0; 
+          const nuevoPesoObjetivo = calcularSiguienteObjetivo(pesoUsado, todasCompletadas);
+
+          // Si el peso subió, hacemos el UPDATE en la tabla RUTINA_EJERCICIOS
+          if (nuevoPesoObjetivo > pesoUsado) {
+            console.log(`📈 ¡Sube de nivel! ${ex.ejercicio?.nombre}: ${pesoUsado}kg -> ${nuevoPesoObjetivo}kg`);
+            
+            // ACTUALIZACIÓN SILENCIOSA
+            await supabase
+              .from('RUTINA_EJERCICIOS') // 👈 Verifica que tengas la columna peso_sugerido en esta tabla
+              .update({ peso_sugerido: nuevoPesoObjetivo }) 
+              .match({ rutina_id: rutinaId, ejercicio_id: ex.ejercicio_id });
+          }
+        }
+      }
+      // ---------------------------------------------------------
+
       if (result.queued) {
-        console.log(`📡 [Workout] Sin conexión. Sesión encolada para subirse luego.`);
+        console.log(`📡 [Workout] Sin conexión. Sesión encolada.`);
       } else {
         console.log(`✅ [Workout] Sesión guardada directamente en la nube.`);
       }

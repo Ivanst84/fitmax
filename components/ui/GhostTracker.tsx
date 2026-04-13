@@ -83,27 +83,37 @@ export default function GhostTracker({
     }
   }, [currentKg, currentReps, setIndex, ghostVol, isCompleted]);
 
-  // 🚀 FIX UX 3: ESTADO CONGELADO EN LUGAR DE DESAPARECER ABRUPTAMENTE
   if (ghostVol <= 0) return null;
 
   const delta = deltaPct(userVol, ghostVol);
   const isBeating = userVol > ghostVol && userVol > 0;
   const isLosing  = userVol < ghostVol && userVol > 0;
 
-  // Si ya se completó el set, mostramos el "ticket" de victoria/resumen
+  // 🚀 LA MATEMÁTICA DEL SUDOR: Calcula cuántas reps necesitas para ganar
+  let repsNeededText = null;
+  if (!isBeating && !isCompleted && userKgNum > 0) {
+    // Si ya pusiste un peso, calculamos cuántas reps necesitas para superar el volumen del fantasma
+    const repsToWin = Math.floor((ghostVol / userKgNum)) + 1;
+    repsNeededText = `Saca ${repsToWin} reps para romper tu récord.`;
+  } else if (!isBeating && !isCompleted && userKgNum === 0 && ghostKg === 0) {
+     // Caso peso corporal
+     repsNeededText = `Saca ${ghostReps + 1} reps para romper tu récord.`;
+  }
+
+  // TICKET DE VICTORIA (Cuando ya acabaste el set)
   if (isCompleted) {
     return (
-      <View style={[s.container, { opacity: 0.6, borderColor: isBeating ? 'rgba(34, 197, 94, 0.3)' : '#1A1A1A' }]}>
+      <View style={[s.container, { opacity: 0.8, borderColor: isBeating ? 'rgba(34, 197, 94, 0.4)' : '#1A1A1A' }]}>
         <View style={s.headerRow}>
           <View style={s.labelGroup}>
             <View style={[s.ghostDot, { backgroundColor: isBeating ? colors.success : colors.textMuted }]} />
             <Text style={[s.ghostLabel, { color: isBeating ? colors.success : colors.textMuted }]}>
-              {isBeating ? '¡RÉCORD SUPERADO!' : 'SET COMPLETADO'}
+              {isBeating ? '¡RÉCORD ANTERIOR DESTRUIDO!' : 'SET REGISTRADO'}
             </Text>
           </View>
           {delta !== null && (
             <Text style={[s.deltaText, isBeating ? s.deltaTextWin : { color: colors.textMuted }]}>
-              {isBeating ? `+${delta}%` : `${delta}%`}
+              {isBeating ? `+${delta}% Volumen` : `${delta}% Volumen`}
             </Text>
           )}
         </View>
@@ -111,13 +121,13 @@ export default function GhostTracker({
     );
   }
 
-  // Estado normal (en progreso)
+  // ESTADO ACTIVO (Mientras entrenas)
   return (
     <View style={s.container}>
       <View style={s.headerRow}>
         <View style={s.labelGroup}>
           <View style={s.ghostDot} />
-          <Text style={s.ghostLabel}>Fantasma</Text>
+          <Text style={s.ghostLabel}>TU ÚLTIMA VEZ</Text>
           <Text style={s.ghostStat}>{ghostKg}kg × {ghostReps}</Text>
         </View>
 
@@ -139,10 +149,15 @@ export default function GhostTracker({
         </View>
       </View>
 
+      {/* 🚀 EL GRITO DEL ENTRENADOR EN TEXTO GRIS */}
+      {repsNeededText && (
+        <Text style={s.coachWhisper}>{repsNeededText}</Text>
+      )}
+
       {isBeating && (
         <View style={s.victoryRow}>
           <View style={s.victoryDot} />
-          <Text style={s.victoryText}>Fantasma superado</Text>
+          <Text style={s.victoryText}>¡Ya lo superaste!</Text>
         </View>
       )}
     </View>
@@ -157,7 +172,7 @@ const s = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   labelGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   ghostDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: GHOST_COLOR, opacity: 0.8 },
-  ghostLabel: { fontSize: 11, fontWeight: '700', color: GHOST_COLOR, letterSpacing: 0.8, textTransform: 'uppercase', opacity: 0.8 },
+  ghostLabel: { fontSize: 11, fontWeight: '900', color: GHOST_COLOR, letterSpacing: 0.8, textTransform: 'uppercase', opacity: 0.8 },
   ghostStat: { fontSize: 11, color: GHOST_COLOR, fontWeight: '500', opacity: 0.65 },
   deltaBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full, backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A' },
   deltaBadgeWin: { backgroundColor: 'rgba(34, 197, 94, 0.10)', borderColor: 'rgba(34, 197, 94, 0.25)' },
@@ -172,5 +187,6 @@ const s = StyleSheet.create({
   userBarFill: { backgroundColor: USER_COLOR },
   victoryRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   victoryDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.success },
-  victoryText: { fontSize: 10, fontWeight: '800', color: colors.success, letterSpacing: 0.8, textTransform: 'uppercase' },
+  victoryText: { fontSize: 10, fontWeight: '900', color: colors.success, letterSpacing: 0.8, textTransform: 'uppercase' },
+  coachWhisper: { fontSize: 11, color: colors.textMuted, fontStyle: 'italic', textAlign: 'center', marginTop: 2 } // 👈 Estilo para el nuevo texto motivacional
 });

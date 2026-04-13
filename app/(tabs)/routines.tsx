@@ -14,8 +14,6 @@ import { colors, spacing, radius, typography } from '../../constants/theme';
 
 const DIAS_SHORT = ['', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
 
-// Slot = la caja del día. El dia (1-7) NUNCA cambia.
-// Lo que cambia es el contenido (rutina, descanso, vacío).
 type Slot = RutinaSemana & { dia_real_asignado: number };
 
 export default function RoutinesScreen() {
@@ -164,7 +162,7 @@ export default function RoutinesScreen() {
 
         if (errores.length > 0) {
           console.error('❌ Error BD:', errores);
-          refetch(); // Rollback visual
+          refetch();
         }
       } catch (e) {
         console.error('❌', e);

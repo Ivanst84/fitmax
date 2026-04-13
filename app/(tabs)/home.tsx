@@ -73,7 +73,7 @@ export default function HomeScreen() {
     return fullNameStr.substring(0, 2).toUpperCase();
   }, [session?.user]);
 
-  // 🚀 FIX #8: Navegamos ANTES de destruir el ticket. El ticket se destruirá en la sig. pantalla.
+  // 🚀 Navegamos ANTES de destruir el ticket. El ticket se destruirá en la sig. pantalla.
   const iniciarMiniRutina = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     if (session?.user?.id) {
@@ -248,6 +248,27 @@ export default function HomeScreen() {
                 <Text style={{ ...typography.body, fontSize: 12, marginTop: 1, color: colors.textPrimary }}>
                   {coachData.mensaje_coach}
                 </Text>
+
+                {/* 🚀 NUEVA BARRA DE PROGRESO DE LA FASE */}
+                {!coachData.plateau_detectado && (
+                  <View style={{ marginTop: 10 }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontSize: 10, color: colors.textSecondary }}>Progreso de Fase</Text>
+                      <Text style={{ fontSize: 10, color: colors.primary }}>
+                        Día {coachData.dias_en_fase || 1} de 14
+                      </Text>
+                    </View>
+                    <View style={{ height: 4, backgroundColor: '#333', borderRadius: 2, overflow: 'hidden' }}>
+                      <View style={{ 
+                        width: `${Math.min(((coachData.dias_en_fase || 1) / 14) * 100, 100)}%`, 
+                        height: '100%', 
+                        backgroundColor: colors.primary 
+                      }} />
+                    </View>
+                  </View>
+                )}
+                {/* 🚀 FIN DE LA BARRA DE PROGRESO */}
+
               </View>
             </View>
 
