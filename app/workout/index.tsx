@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from 'react';
 import {
   View, Text, ScrollView, TextInput,
-  StatusBar, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, Modal, TouchableOpacity
+  StatusBar, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, Modal,AppState, TouchableOpacity
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -44,18 +44,35 @@ const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESI
 const RestTimerIsland = ({ initialSeconds, onFinish, onSkip }: { initialSeconds: number, onFinish: () => void, onSkip: () => void }) => {
   const endTimeRef = useRef(Date.now() + initialSeconds * 1000);
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    // 1. Creamos una función de verificación que podemos llamar en cualquier momento
+    const checkTime = () => {
       const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
       if (remaining <= 0) {
-        clearInterval(interval);
         onFinish(); 
-        return;
+      } else {
+        setSecondsLeft(remaining);
       }
-      setSecondsLeft(remaining);
-    }, 500); 
-    return () => clearInterval(interval);
+    };
+
+    // 2. El intervalo normal que corre mientras la pantalla está prendida
+    const interval = setInterval(checkTime, 500); 
+
+    // 3. 🚀 EL FIX: Listener para cuando la app vuelve del fondo o se desbloquea la pantalla
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // ¡La app despertó! Forzamos la verificación de tiempo inmediatamente
+        checkTime();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
   }, [onFinish]); 
 
   return (

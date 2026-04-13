@@ -73,8 +73,9 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     newSets[setIndex].completed = !newSets[setIndex].completed;
     
     if (newSets[setIndex].completed) {
-      const seg = activeExercises[currentExerciseIndex]?.descanso_segundos || 60;
-      setRestSeconds(seg);
+// 🚀 FIX: Leemos el campo exacto de la BD (descanso_seg)
+const ejercicioActual = activeExercises[currentExerciseIndex];
+const seg = ejercicioActual?.descanso_seg || ejercicioActual?.descanso_segundos || 60;      setRestSeconds(seg);
       setIsResting(true);
     }
     setSetsData({ ...setsData, [exerciseId]: newSets });
@@ -178,6 +179,7 @@ const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: 
     ejerciciosActivos: activeExercises,
     
     // Función clásica (actualiza un solo set)
+// 🚀 FIX: Actualiza un solo set (Mantenemos la firma pero optimizamos la UI hija si es necesario)
     updateSetData: (id: string, idx: number, field: string, val: string) => {
       setSetsData(prev => {
         const s = [...(prev[id] || [])];
@@ -188,17 +190,23 @@ const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: 
       });
     },
 
-    // 🚀 NUEVA FUNCIÓN: Actualiza en cascada de forma segura
+    // 🚀 FIX DE RENDIMIENTO: Actualiza en cascada pero más limpio
     updateCascadeSetData: (id: string, startIndex: number, field: string, val: string) => {
+      // 1. Evitamos re-renders si el valor es idéntico o vacío inútil
+      if (val === undefined) return;
+      
       setSetsData(prev => {
         const s = [...(prev[id] || [])];
-        // Recorremos desde el set actual hacia abajo
+        let hasChanges = false;
+        
         for (let i = startIndex; i < s.length; i++) {
-          if (!s[i].completed) { // Solo si no está palomeado
+          if (!s[i].completed && s[i][field] !== val) { 
             s[i] = { ...s[i], [field]: val };
+            hasChanges = true;
           }
         }
-        return { ...prev, [id]: s };
+        // 2. Si no hubo cambios reales, no disparamos el re-render
+        return hasChanges ? { ...prev, [id]: s } : prev;
       });
     },
 

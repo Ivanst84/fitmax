@@ -3,7 +3,7 @@ import {
   ScrollView, StatusBar, ActivityIndicator 
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,11 +30,15 @@ export default function ExerciseDetail() {
   // 🚀 ESTADO: Para guardar la URL final construida
   const [videoUri, setVideoUri] = useState<string | null>(null);
 
-  // 🚀 FIX: Bandera de seguridad para evitar memory leaks asíncronos
-  const [isMounted, setIsMounted] = useState(true);
-
+  // 🚀 FIX CORRECTO: Bandera de seguridad con useRef
+  const isMounted = useRef(true);
+  
   useEffect(() => {
-    return () => setIsMounted(false); // Cuando la pantalla muere, bajamos la bandera
+    isMounted.current = true;
+    return () => {
+      // Cuando la pantalla muere, bajamos la bandera correctamente
+      isMounted.current = false; 
+    };
   }, []);
 
   useEffect(() => { 
@@ -64,10 +68,11 @@ export default function ExerciseDetail() {
 
       // 3. Obtener los datos del ejercicio
       const { data: ejData } = await supabase.from('EJERCICIOS').select('*').eq('id', id).single();
-      setEjercicio(ejData);
+      
+      if (isMounted.current) setEjercicio(ejData);
 
       // 4. CONSTRUIR LA URL DEL VIDEO
-      if (ejData && ejData.video_url) {
+      if (ejData && ejData.video_url && isMounted.current) {
         const fullUrl = `${STORAGE_BASE_URL}${carpetaGenero}/${ejData.video_url}`;
         setVideoUri(fullUrl);
       }
@@ -80,7 +85,7 @@ export default function ExerciseDetail() {
           .eq('ejercicio_id', id)
           .order('created_at', { ascending: false });
           
-        if (histData && histData.length > 0) {
+        if (histData && histData.length > 0 && isMounted.current) {
           let maxKg = 0;
           histData.forEach(sesion => { 
             (sesion.series_json as any[])?.forEach(serie => { 
@@ -97,32 +102,31 @@ export default function ExerciseDetail() {
     } catch (e) { 
       console.error(e); 
     } finally { 
-      // Solo actualizamos el estado si el componente sigue vivo
-      if (isMounted) setCargando(false); 
+      // 🚀 FIX: Verificamos .current
+      if (isMounted.current) setCargando(false); 
     }
   };
 
-  // 🚀 FIX: Inicialización limpia del player sin listeners infinitos
+  // Inicialización limpia del player
   const player = useVideoPlayer(videoUri, (p) => { 
     p.loop = true; 
   });
 
-  // 🚀 FIX: Ciclo de vida estricto y seguro
   useEffect(() => {
     if (!player) return;
 
     // Agregamos el listener
     const subscription = player.addListener('playingChange', (payload) => {
-      if (isMounted) { // Solo actualizamos si seguimos en la pantalla
+      // 🚀 FIX: Verificamos .current antes de actualizar el state
+      if (isMounted.current) { 
         setIsPlaying(payload.isPlaying);
       }
     });
 
-    // Cleanup function: Se ejecuta al desmontar el componente
     return () => {
-      subscription.remove(); // Matamos el listener
+      subscription.remove(); // Matamos el listener al salir
     };
-  }, [player, isMounted]);
+  }, [player]);
 
   if (cargando) return <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!ejercicio) return <View style={s.center}><Text style={{color: '#fff'}}>No encontrado</Text></View>;
