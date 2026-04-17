@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { supabase } from '../lib/supabase';
 import { saveSessionWithFallback } from '../lib/offlineQueue';
 
-export function useWorkoutSession(ejerciciosIniciales: any[]) {
+export function useWorkoutSession(ejerciciosIniciales: any[], nivelEnergia: string = 'normal') {
   const [activeExercises, setActiveExercises] = useState<any[]>([]);
   const [currentExerciseIndex, setCurrentExerciseIndex] = useState(0);
   const [setsData, setSetsData] = useState<Record<string, any[]>>({});
@@ -17,20 +17,47 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     if (!user || ejercicios.length === 0) return;
 
     const ids = ejercicios.map(e => e.ejercicio_id);
+    
+    // Traemos las últimas 5 sesiones para tener de dónde elegir a nuestro Fantasma
     const { data } = await supabase
       .from('HISTORIAL_EJERCICIOS')
       .select('ejercicio_id, series_json, created_at')
       .eq('user_id', user.id)
       .in('ejercicio_id', ids)
       .order('created_at', { ascending: false })
-      .limit(ids.length * 3); 
+      .limit(ids.length * 5); 
 
     if (data) {
-      const map: any = {};
+      const groupedData: Record<string, any[][]> = {};
       data.forEach(row => {
-        if (!map[row.ejercicio_id]) map[row.ejercicio_id] = row.series_json;
+        if (!groupedData[row.ejercicio_id]) groupedData[row.ejercicio_id] = [];
+        groupedData[row.ejercicio_id].push(row.series_json);
       });
-      setPreviousSets(map);
+
+      const mapFinal: any = {};
+
+      // 🚀 LÓGICA DE LOS 3 FANTASMAS (Normal, Conservador o Némesis)
+      for (const ejId in groupedData) {
+        const historiales = groupedData[ejId];
+
+        // Función rápida para calcular el volumen total de una sesión
+        const calcVol = (sets: any[]) => sets.reduce((acc, s) => acc + ((parseFloat(s.kg) || 0) * (parseInt(s.reps) || 0)), 0);
+
+        if (nivelEnergia === 'agotado') {
+          // Fantasma Conservador: La sesión con MENOR volumen de las recientes
+          const conservador = [...historiales].sort((a, b) => calcVol(a) - calcVol(b));
+          mapFinal[ejId] = conservador[0];
+        } else if (nivelEnergia === 'a_tope') {
+          // Fantasma Némesis: La sesión con MAYOR volumen (Récord histórico reciente)
+          const record = [...historiales].sort((a, b) => calcVol(b) - calcVol(a));
+          mapFinal[ejId] = record[0];
+        } else {
+          // Fantasma Normal: Estrictamente la última sesión
+          mapFinal[ejId] = historiales[0];
+        }
+      }
+      
+      setPreviousSets(mapFinal);
     }
   };
 
@@ -73,15 +100,16 @@ export function useWorkoutSession(ejerciciosIniciales: any[]) {
     newSets[setIndex].completed = !newSets[setIndex].completed;
     
     if (newSets[setIndex].completed) {
-// 🚀 FIX: Leemos el campo exacto de la BD (descanso_seg)
-const ejercicioActual = activeExercises[currentExerciseIndex];
-const seg = ejercicioActual?.descanso_seg || ejercicioActual?.descanso_segundos || 60;      setRestSeconds(seg);
+      // 🚀 FIX: Leemos el campo exacto de la BD (descanso_seg)
+      const ejercicioActual = activeExercises[currentExerciseIndex];
+      const seg = ejercicioActual?.descanso_seg || ejercicioActual?.descanso_segundos || 60;      
+      setRestSeconds(seg);
       setIsResting(true);
     }
     setSetsData({ ...setsData, [exerciseId]: newSets });
   };
 
-const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: number, vol: number, sets: number, kcal: number) => {
+  const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: number, vol: number, sets: number, kcal: number) => {
     try {
       setIsSaving(true);
       const { data: { user } } = await supabase.auth.getUser();
@@ -178,8 +206,7 @@ const finishAndSaveWorkout = async (rutinaId: string, nombre: string, segundos: 
     totalExercises: activeExercises.length,
     ejerciciosActivos: activeExercises,
     
-    // Función clásica (actualiza un solo set)
-// 🚀 FIX: Actualiza un solo set (Mantenemos la firma pero optimizamos la UI hija si es necesario)
+    // 🚀 FIX: Actualiza un solo set (Mantenemos la firma pero optimizamos la UI hija si es necesario)
     updateSetData: (id: string, idx: number, field: string, val: string) => {
       setSetsData(prev => {
         const s = [...(prev[id] || [])];

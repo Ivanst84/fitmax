@@ -73,7 +73,6 @@ export default function HomeScreen() {
     return fullNameStr.substring(0, 2).toUpperCase();
   }, [session?.user]);
 
-  // 🚀 Navegamos ANTES de destruir el ticket. El ticket se destruirá en la sig. pantalla.
   const iniciarMiniRutina = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     if (session?.user?.id) {
@@ -222,7 +221,7 @@ export default function HomeScreen() {
 
         <StreakWidget />
 
-        {!loadingCoach && coachData && (
+   {!loadingCoach && coachData && (
           <PressableCard 
             style={{
               backgroundColor: coachData.plateau_detectado ? 'rgba(255, 77, 0, 0.1)' : colors.surface,
@@ -249,30 +248,59 @@ export default function HomeScreen() {
                   {coachData.mensaje_coach}
                 </Text>
 
-                {/* 🚀 NUEVA BARRA DE PROGRESO DE LA FASE */}
+                {/* 🚀 NUEVA NARRATIVA ÉPICA DE 14 DÍAS */}
                 {!coachData.plateau_detectado && (
-                  <View style={{ marginTop: 10 }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <Text style={{ fontSize: 10, color: colors.textSecondary }}>Progreso de Fase</Text>
-                      <Text style={{ fontSize: 10, color: colors.primary }}>
-                        Día {coachData.dias_en_fase || 1} de 14
-                      </Text>
-                    </View>
-                    <View style={{ height: 4, backgroundColor: '#333', borderRadius: 2, overflow: 'hidden' }}>
-                      <View style={{ 
-                        width: `${Math.min(((coachData.dias_en_fase || 1) / 14) * 100, 100)}%`, 
-                        height: '100%', 
-                        backgroundColor: colors.primary 
-                      }} />
-                    </View>
+                  <View style={{ marginTop: 12, backgroundColor: '#111', padding: 10, borderRadius: radius.md, borderWidth: 1, borderColor: '#222' }}>
+                    {(() => {
+                      const diasFase = coachData.dias_en_fase || 1;
+                      let narrativaTitulo = "FASE NEURAL";
+                      let narrativaDesc = "Tu sistema nervioso aprende los patrones.";
+                      let progresoColor = colors.primary; // Verde/Primario
+
+                      if (diasFase >= 6 && diasFase <= 10) {
+                        narrativaTitulo = "FASE HIPERTRÓFICA";
+                        narrativaDesc = "Tus fibras musculares se adaptan y crecen.";
+                        progresoColor = '#F59E0B'; // Naranja
+                      } else if (diasFase >= 11) {
+                        narrativaTitulo = "SUPERCOMPENSACIÓN";
+                        narrativaDesc = "El pico de fuerza máxima se aproxima.";
+                        progresoColor = '#EF4444'; // Rojo Fuego
+                      }
+
+                      return (
+                        <>
+                          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                            <Text style={{ fontSize: 10, color: progresoColor, fontWeight: '900', letterSpacing: 0.5 }}>
+                              {narrativaTitulo}
+                            </Text>
+                            <Text style={{ fontSize: 10, color: colors.textSecondary }}>
+                              Día {diasFase} de 14
+                            </Text>
+                          </View>
+                          
+                          <Text style={{ fontSize: 10, color: colors.textMuted, fontStyle: 'italic', marginBottom: 8 }}>
+                            {narrativaDesc}
+                          </Text>
+                          
+                          <View style={{ height: 5, backgroundColor: '#222', borderRadius: 2.5, overflow: 'hidden' }}>
+                            <View style={{ 
+                              width: `${Math.min((diasFase / 14) * 100, 100)}%`, 
+                              height: '100%', 
+                              backgroundColor: progresoColor 
+                            }} />
+                          </View>
+                        </>
+                      );
+                    })()}
                   </View>
                 )}
-                {/* 🚀 FIN DE LA BARRA DE PROGRESO */}
+                {/* 🚀 FIN DE LA NARRATIVA */}
 
               </View>
             </View>
 
-            {coachData.plateau_detectado && (
+            {/* BOTÓN DE EVOLUCIÓN (Sale cuando hay plateau o se cumplen los 14 días) */}
+            {(coachData.plateau_detectado || (coachData.dias_en_fase && coachData.dias_en_fase >= 14)) && (
               <PressableCard 
                 style={styles.evolveBtn}
                 onPress={handleRegenerarRutina}
@@ -283,8 +311,10 @@ export default function HomeScreen() {
                   <ActivityIndicator color="#000" size="small" />
                 ) : (
                   <>
-                    <Text style={styles.evolveBtnText}>Evolucionar Mi Rutina</Text>
-                    <Ionicons name="trending-up" size={16} color="#000" />
+                    <Text style={styles.evolveBtnText}>
+                      {coachData.plateau_detectado ? 'Superar Estancamiento' : '¡Evolucionar Rutina! 🚀'}
+                    </Text>
+                    <Ionicons name={coachData.plateau_detectado ? "flash" : "trending-up"} size={16} color="#000" />
                   </>
                 )}
               </PressableCard>
@@ -292,7 +322,6 @@ export default function HomeScreen() {
 
           </PressableCard>
         )}
-
         <View style={[styles.banner, { marginTop: spacing.lg }]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 4 }}>
             <Text style={styles.bannerTitle}>Progreso Semanal</Text>

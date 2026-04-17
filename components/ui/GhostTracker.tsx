@@ -15,6 +15,7 @@ interface GhostTrackerProps {
   ghostSets: GhostSet[];
   setIndex: number;
   isCompleted?: boolean;
+  ghostMode?: string;
 }
 
 const toNum = (v: string | number): number => {
@@ -39,6 +40,7 @@ export default function GhostTracker({
   ghostSets,
   setIndex,
   isCompleted = false,
+  ghostMode = 'normal', // 👈 Valor por defecto
 }: GhostTrackerProps) {
 
   const ghostSet   = ghostSets[setIndex];
@@ -92,12 +94,22 @@ export default function GhostTracker({
   // 🚀 LA MATEMÁTICA DEL SUDOR: Calcula cuántas reps necesitas para ganar
   let repsNeededText = null;
   if (!isBeating && !isCompleted && userKgNum > 0) {
-    // Si ya pusiste un peso, calculamos cuántas reps necesitas para superar el volumen del fantasma
     const repsToWin = Math.floor((ghostVol / userKgNum)) + 1;
     repsNeededText = `Saca ${repsToWin} reps para romper tu récord.`;
   } else if (!isBeating && !isCompleted && userKgNum === 0 && ghostKg === 0) {
-     // Caso peso corporal
      repsNeededText = `Saca ${ghostReps + 1} reps para romper tu récord.`;
+  }
+
+  // 🚀 LÓGICA DE IDENTIDAD (El disfraz del Fantasma)
+  let ghostTitle = 'TU ÚLTIMA VEZ';
+  let ghostColor = '#4A9EFF'; // Azul (Normal)
+
+  if (ghostMode === 'agotado') {
+    ghostTitle = 'PROMEDIO (CONSERVADOR)';
+    ghostColor = '#F59E0B'; // Ámbar/Naranja
+  } else if (ghostMode === 'a_tope') {
+    ghostTitle = 'TU NÉMESIS (RÉCORD)';
+    ghostColor = '#EF4444'; // Rojo Fuego
   }
 
   // TICKET DE VICTORIA (Cuando ya acabaste el set)
@@ -126,9 +138,10 @@ export default function GhostTracker({
     <View style={s.container}>
       <View style={s.headerRow}>
         <View style={s.labelGroup}>
-          <View style={s.ghostDot} />
-          <Text style={s.ghostLabel}>TU ÚLTIMA VEZ</Text>
-          <Text style={s.ghostStat}>{ghostKg}kg × {ghostReps}</Text>
+          {/* 🚀 Inyectamos el color y título dinámico */}
+          <View style={[s.ghostDot, { backgroundColor: ghostColor }]} />
+          <Text style={[s.ghostLabel, { color: ghostColor }]}>{ghostTitle}</Text>
+          <Text style={[s.ghostStat, { color: ghostColor }]}>{ghostKg}kg × {ghostReps}</Text>
         </View>
 
         {delta !== null && userVol > 0 && (
@@ -142,7 +155,8 @@ export default function GhostTracker({
 
       <View style={s.barsContainer}>
         <View style={s.barTrack}>
-          <Animated.View style={[s.barFill, s.ghostBarFill, { width: ghostBarAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]} />
+          {/* 🚀 Inyectamos el color dinámico a la barra del fantasma */}
+          <Animated.View style={[s.barFill, { backgroundColor: ghostColor, width: ghostBarAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]} />
         </View>
         <View style={s.barTrack}>
           <Animated.View style={[s.barFill, s.userBarFill, { width: userBarAnim.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] }) }]} />
@@ -164,16 +178,15 @@ export default function GhostTracker({
   );
 }
 
-const GHOST_COLOR = '#4A9EFF';
 const USER_COLOR  = colors.primary;
 
 const s = StyleSheet.create({
   container: { backgroundColor: '#0C0C0C', borderRadius: radius.md, padding: spacing.sm, marginBottom: spacing.sm, borderWidth: 1, borderColor: '#1A1A1A', gap: 8 },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   labelGroup: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  ghostDot: { width: 7, height: 7, borderRadius: 3.5, backgroundColor: GHOST_COLOR, opacity: 0.8 },
-  ghostLabel: { fontSize: 11, fontWeight: '900', color: GHOST_COLOR, letterSpacing: 0.8, textTransform: 'uppercase', opacity: 0.8 },
-  ghostStat: { fontSize: 11, color: GHOST_COLOR, fontWeight: '500', opacity: 0.65 },
+  ghostDot: { width: 7, height: 7, borderRadius: 3.5, opacity: 0.8 },
+  ghostLabel: { fontSize: 11, fontWeight: '900', letterSpacing: 0.8, textTransform: 'uppercase', opacity: 0.8 },
+  ghostStat: { fontSize: 11, fontWeight: '500', opacity: 0.65 },
   deltaBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full, backgroundColor: '#1A1A1A', borderWidth: 1, borderColor: '#2A2A2A' },
   deltaBadgeWin: { backgroundColor: 'rgba(34, 197, 94, 0.10)', borderColor: 'rgba(34, 197, 94, 0.25)' },
   deltaBadgeLose: { backgroundColor: 'rgba(255, 77, 0, 0.08)', borderColor: 'rgba(255, 77, 0, 0.2)' },
@@ -183,10 +196,9 @@ const s = StyleSheet.create({
   barsContainer: { gap: 5 },
   barTrack: { height: 8, backgroundColor: '#1A1A1A', borderRadius: 4, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 4, minWidth: 4 },
-  ghostBarFill: { backgroundColor: GHOST_COLOR },
   userBarFill: { backgroundColor: USER_COLOR },
   victoryRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   victoryDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: colors.success },
   victoryText: { fontSize: 10, fontWeight: '900', color: colors.success, letterSpacing: 0.8, textTransform: 'uppercase' },
-  coachWhisper: { fontSize: 11, color: colors.textMuted, fontStyle: 'italic', textAlign: 'center', marginTop: 2 } // 👈 Estilo para el nuevo texto motivacional
+  coachWhisper: { fontSize: 11, color: colors.textMuted, fontStyle: 'italic', textAlign: 'center', marginTop: 2 } 
 });

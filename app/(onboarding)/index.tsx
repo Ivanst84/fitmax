@@ -132,7 +132,7 @@ const finalizarCuestionario = async (perfilFinal: any) => {
         .limit(1);
 
       if (rutinasExistentes && rutinasExistentes.length > 0) {
-        console.log('⚠️ El usuario ya tenía rutinas. Rescatando estado y evitando duplicados.');
+        console.log(' El usuario ya tenía rutinas. Rescatando estado y evitando duplicados.');
         await AsyncStorage.setItem(`onboarding_${user.id}`, 'true');
         router.replace('/(tabs)/home');
         return;
@@ -165,7 +165,7 @@ const finalizarCuestionario = async (perfilFinal: any) => {
       const { data: catalogoDB, error: errorCat } = await query;
       
       if (errorCat) {
-        console.error("❌ Error de Supabase:", errorCat.message);
+        console.error(" Error de Supabase:", errorCat.message);
         throw new Error('No se pudo cargar el catálogo filtrado');
       }
       if (!catalogoDB) throw new Error('El catálogo está vacío');
@@ -176,7 +176,6 @@ const finalizarCuestionario = async (perfilFinal: any) => {
         CAT_MUSCULOS: { grupo_key: mapaMusculos[ej.musculo_id] || 'other' }
       }));
       
-      // 🔥 LA LICUADORA INTELIGENTE (Smart Blender)
       let catalogoOptimizado = catalogoConGrupos; // Usamos el nuevo array seguro
 
       if (perfilFinal.enfoque !== 'fullbody') {

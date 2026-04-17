@@ -103,7 +103,7 @@ export default function WorkoutSessionScreen() {
     skipRest, allSetsDone, totalExercises, restSeconds, isResting,
     goToNextExercise, goToPrevExercise, finishAndSaveWorkout, isSaving, swapExercise,
     ejerciciosActivos, previousSets, updateCascadeSetData
-  } = useWorkoutSession(ejerciciosAjustados);
+  } = useWorkoutSession(ejerciciosAjustados,nivelEnergia);
 
   const [showTechGuide, setShowTechGuide] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
@@ -373,6 +373,7 @@ const handleFinish = () => {
               ghostSets={previousSets[currentExercise.ejercicio_id] ?? []}
               setIndex={activeSetIndex}
               isCompleted={currentSets[activeSetIndex]?.completed ?? false}
+              ghostMode={nivelEnergia}
             /> 
 
             {currentSets.map((set: any, index: number) => {
