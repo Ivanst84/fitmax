@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useImperativeHandle, forwardRef } from 'react';
 import {
   View, Text, ScrollView, TextInput,
-  StatusBar, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, Modal,AppState, TouchableOpacity
+  StatusBar, ActivityIndicator, StyleSheet, KeyboardAvoidingView, Platform, Modal, AppState, TouchableOpacity
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import * as Speech from 'expo-speech';
+import * as Notifications from 'expo-notifications';
 
 import PressableCard from '../../components/ui/PressableCard';
 import SessionReportCard from '../../components/ui/SessionReportCard';
@@ -20,6 +22,17 @@ import { useRoutineDetail } from '../../hooks/useRoutineDetail';
 import { useWorkoutSession } from '../../hooks/useWorkoutSession';
 import ExerciseGuideCard from '../../components/ui/ExerciseGuideCard';
 import { supabase } from '../../lib/supabase';
+
+// ─── Configuración de Notificaciones ──────────────────
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: false, 
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+    shouldShowBanner: false, 
+    shouldShowList: false,   
+  }),
+});
 
 type TimerHandle = { getElapsedSeconds: () => number; };
 const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESIÓN ACTIVA' }, ref) => {
@@ -41,29 +54,59 @@ const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESI
   );
 });
 
-const RestTimerIsland = ({ initialSeconds, onFinish, onSkip }: { initialSeconds: number, onFinish: () => void, onSkip: () => void }) => {
+// 🚀 REFACTOR: Pasamos speakFn como prop para que respete si la voz está apagada
+const RestTimerIsland = ({ initialSeconds, onFinish, onSkip, speakFn }: { initialSeconds: number, onFinish: () => void, onSkip: () => void, speakFn: (text: string) => void }) => {
   const endTimeRef = useRef(Date.now() + initialSeconds * 1000);
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
   const appState = useRef(AppState.currentState);
+  
+  const announcedRef = useRef<{ [key: number]: boolean }>({});
+  const pushNotificationId = useRef<string | null>(null); 
 
   useEffect(() => {
-    // 1. Creamos una función de verificación que podemos llamar en cualquier momento
+    const setupBackgroundPush = async () => {
+      try {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status === 'granted') {
+          pushNotificationId.current = await Notifications.scheduleNotificationAsync({
+            content: {
+              title: '🦍 ¡Fin del Descanso!',
+              body: 'Tu cuerpo está listo. Regresa a FitMax a romper la siguiente serie.',
+              sound: true,
+              priority: Notifications.AndroidNotificationPriority.HIGH,
+            },
+            trigger: { seconds: initialSeconds },
+          });
+        }
+      } catch (error) {
+        console.warn("🛡️ Notificaciones bloqueadas por Expo Go.");
+      }
+    };
+    setupBackgroundPush();
+
     const checkTime = () => {
       const remaining = Math.ceil((endTimeRef.current - Date.now()) / 1000);
+      
+      if (remaining === 10 && !announcedRef.current[10]) {
+        speakFn("Faltan diez segundos. Prepárate.");
+        announcedRef.current[10] = true;
+      } else if (remaining <= 3 && remaining > 0 && !announcedRef.current[remaining]) {
+        speakFn(`${remaining}`);
+        announcedRef.current[remaining] = true;
+      }
+
       if (remaining <= 0) {
+        speakFn("¡A darle!");
         onFinish(); 
       } else {
         setSecondsLeft(remaining);
       }
     };
 
-    // 2. El intervalo normal que corre mientras la pantalla está prendida
     const interval = setInterval(checkTime, 500); 
 
-    // 3. 🚀 EL FIX: Listener para cuando la app vuelve del fondo o se desbloquea la pantalla
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
-        // ¡La app despertó! Forzamos la verificación de tiempo inmediatamente
         checkTime();
       }
       appState.current = nextAppState;
@@ -72,8 +115,11 @@ const RestTimerIsland = ({ initialSeconds, onFinish, onSkip }: { initialSeconds:
     return () => {
       clearInterval(interval);
       subscription.remove();
+      try {
+        if (pushNotificationId.current) Notifications.cancelScheduledNotificationAsync(pushNotificationId.current);
+      } catch (e) {}
     };
-  }, [onFinish]); 
+  }, [initialSeconds, onFinish, speakFn]); 
 
   return (
     <View style={s.restCard}>
@@ -91,6 +137,9 @@ export default function WorkoutSessionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   
+  // 🚀 ESTADO MAESTRO DE LA VOZ (Opt-In: Empieza apagado)
+  const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
+
   const { rutina, ejercicios, cargando } = useRoutineDetail(rutinaId as string);
   
   const ejerciciosAjustados = useMemo(() => {
@@ -103,7 +152,7 @@ export default function WorkoutSessionScreen() {
     skipRest, allSetsDone, totalExercises, restSeconds, isResting,
     goToNextExercise, goToPrevExercise, finishAndSaveWorkout, isSaving, swapExercise,
     ejerciciosActivos, previousSets, updateCascadeSetData
-  } = useWorkoutSession(ejerciciosAjustados,nivelEnergia);
+  } = useWorkoutSession(ejerciciosAjustados, nivelEnergia);
 
   const [showTechGuide, setShowTechGuide] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
@@ -112,25 +161,54 @@ export default function WorkoutSessionScreen() {
   const [aiMessage, setAiMessage] = useState("Generando tu resumen épico...");
   const [cargandoIA, setCargandoIA] = useState(false);
 
-  // 🚀 ESTADO GLOBAL PARA EL CUSTOM ALERT
   const [alertData, setAlertData] = useState<{
-    visible: boolean;
-    title: string;
-    message: string;
-    type: 'info' | 'success' | 'warning' | 'destructive';
-    cancelText?: string;
-    confirmText?: string;
-    onConfirm: () => void;
-    onCancel?: () => void;
-  }>({
-    visible: false, title: '', message: '', type: 'info', onConfirm: () => {}
-  });
+    visible: boolean; title: string; message: string; type: 'info' | 'success' | 'warning' | 'destructive';
+    cancelText?: string; confirmText?: string; onConfirm: () => void; onCancel?: () => void;
+  }>({ visible: false, title: '', message: '', type: 'info', onConfirm: () => {} });
 
   const closeAlert = () => setAlertData(prev => ({ ...prev, visible: false }));
-
   const timerRef = useRef<TimerHandle>(null);
   const viewShotRef = useRef<ViewShot>(null);
 
+  // 🚀 FUNCIÓN MAESTRA DE HABLA (Verifica si está encendido)
+// 🚀 FUNCIÓN MAESTRA DE HABLA (Con poder de interrupción)
+  const safeSpeak = async (text: string, interrupt = true) => {
+    if (!isVoiceEnabled) return;
+    if (interrupt) {
+      await Speech.stop(); // 🛑 Aniquila cualquier audio que esté en la fila esperando
+    }
+    Speech.speak(text, { language: 'es-MX', rate: 0.95, pitch: 1.0 });
+  };
+
+  const lastExerciseId = useRef<string | null>(null);
+
+useEffect(() => {
+    if (!isVoiceEnabled) return; 
+
+    if (currentExercise && !isResting && !showSummary && lastExerciseId.current !== currentExercise.id) {
+      // 🚀 FIX: Aseguramos la interrupción al saltar de ejercicio
+      Speech.stop(); 
+      
+      const nombre = currentExercise.ejercicio.nombre;
+      const repeticiones = currentExercise.repeticiones; 
+      const series = currentExercise.series;
+      const esPorTiempo = currentExercise.ejercicio.es_por_tiempo || currentExercise.es_calentamiento;
+      
+      const subMensaje = esPorTiempo ? `durante ${repeticiones} segundos` : `por ${repeticiones} repeticiones`;
+      
+      safeSpeak(`Siguiente ejercicio: ${nombre}. Vamos por ${series} series ${subMensaje}.`, false);
+      
+      lastExerciseId.current = currentExercise.id;
+    }
+
+    if (isResting) {
+      safeSpeak(`Serie completada. Descanso de ${restSeconds} segundos.`);
+    }
+
+    return () => {
+      if (showSummary) Speech.stop();
+    };
+  }, [currentExercise?.id, isResting, showSummary, restSeconds, isVoiceEnabled]);
   const currentSetsMemo = useMemo(() => {
     if (!currentExercise) return [];
     return setsData[currentExercise.id] || [];
@@ -148,19 +226,14 @@ export default function WorkoutSessionScreen() {
 
   const formatTime = (sec: number) => { const m = Math.floor(sec / 60); const s = sec % 60; return `${m}:${s < 10 ? '0' : ''}${s}`; };
 
-  // 🚀 REEMPLAZO 1: Alerta de Regresión
   const handleRegresion = (regresionId: string) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     setAlertData({
-      visible: true,
-      title: '¿Cambiar a versión fácil?',
-      message: 'Reemplazaremos este ejercicio por uno menos exigente.',
-      type: 'info',
-      confirmText: 'Sí, cambiar',
-      cancelText: 'Cancelar',
-      onCancel: closeAlert,
+      visible: true, title: '¿Cambiar a versión fácil?', message: 'Reemplazaremos este ejercicio por uno menos exigente.', type: 'info',
+      confirmText: 'Sí, cambiar', cancelText: 'Cancelar', onCancel: closeAlert,
       onConfirm: () => {
         closeAlert();
+        safeSpeak("Cambiando ejercicio a una variante más sencilla.");
         swapExercise && swapExercise(currentExercise.id, regresionId);
       }
     });
@@ -175,42 +248,35 @@ export default function WorkoutSessionScreen() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
       });
       const data = await response.json();
-      setAiMessage(data.candidates[0].content.parts[0].text.trim());
-    } catch (error) { setAiMessage(`¡Eres una máquina! A descansar y crecer.`); } finally { setCargandoIA(false); }
+      const msg = data.candidates[0].content.parts[0].text.trim();
+      setAiMessage(msg);
+      safeSpeak(`¡Entrenamiento finalizado! ${msg}`);
+    } catch (error) { 
+      const fallbackMsg = `¡Eres una máquina! A descansar y crecer.`;
+      setAiMessage(fallbackMsg);
+      safeSpeak(fallbackMsg);
+    } finally { setCargandoIA(false); }
   };
 
-const handleFinish = () => {
+  const handleFinish = () => {
     let setsCalculados = 0;
     ejerciciosActivos.forEach((ex: any) => { (setsData[ex.id] || []).forEach((s: any) => { if (s.completed) setsCalculados++; }); });
 
     if (setsCalculados === 0) {
       setAlertData({
-        visible: true,
-        title: 'Entrenamiento Vacío',
-        message: 'No has completado ninguna serie.',
-        type: 'warning',
-        confirmText: 'Descartar y Salir',
-        cancelText: 'Seguir entrenando',
-        onCancel: closeAlert,
-        onConfirm: () => {
-          closeAlert();
-          router.back();
-        }
+        visible: true, title: 'Entrenamiento Vacío', message: 'No has completado ninguna serie.', type: 'warning',
+        confirmText: 'Descartar y Salir', cancelText: 'Seguir entrenando', onCancel: closeAlert,
+        onConfirm: () => { closeAlert(); router.back(); }
       });
       return;
     }
 
-    // 🚀 FIX UX: Mensaje dinámico dependiendo de si terminó todo o se fue a la mitad
     setAlertData({
       visible: true,
       title: allSetsDone ? '¡Misión Cumplida!' : '¿Terminar antes?',
-      message: allSetsDone 
-        ? '¡Excelente trabajo! ¿Deseas finalizar y guardar tu entrenamiento?' 
-        : 'Aún tienes series pendientes. ¿Deseas guardar lo que has hecho hasta ahora?',
+      message: allSetsDone ? '¡Excelente trabajo! ¿Deseas finalizar y guardar tu entrenamiento?' : 'Aún tienes series pendientes. ¿Deseas guardar lo que has hecho hasta ahora?',
       type: allSetsDone ? 'success' : 'info',
-      confirmText: 'Terminar y Guardar',
-      cancelText: 'Seguir entrenando',
-      onCancel: closeAlert,
+      confirmText: 'Terminar y Guardar', cancelText: 'Seguir entrenando', onCancel: closeAlert,
       onConfirm: async () => {
         closeAlert();
         try {
@@ -227,18 +293,13 @@ const handleFinish = () => {
 
           if (user) {
             const { data: kcalData, error: kcalError } = await supabase.rpc('calcular_calorias_sesion', {
-              p_user_id: user.id,
-              p_duracion_seg: tiempoFinalSegundos,
-              p_volumen_total: volCalculado,
-              p_total_reps: repsTotales 
+              p_user_id: user.id, p_duracion_seg: tiempoFinalSegundos, p_volumen_total: volCalculado, p_total_reps: repsTotales 
             });
-
             if (!kcalError && kcalData) caloriasReales = kcalData;
             else caloriasReales = tiempoFinalSegundos / 60 > 1 ? Math.round((tiempoFinalSegundos / 60) * 5) : 10;
           }
 
           setWorkoutStats({ volume: volCalculado, sets: setsCalculados, finalTimeStr: tiempoFinalStr });
-          
           const id = await finishAndSaveWorkout(rutinaId as string, rutina?.nombre || 'Rutina', tiempoFinalSegundos, volCalculado, setsCalculados, caloriasReales);
           
           if (id) {
@@ -249,14 +310,57 @@ const handleFinish = () => {
           } else throw new Error("No se pudo guardar");
         } catch (e) { 
           console.error("Error al finalizar:", e);
-          setAlertData({
-            visible: true, title: 'Error de Guardado', message: 'No pudimos guardar tu progreso. Intenta de nuevo.',
-            type: 'destructive', confirmText: 'Entendido', onConfirm: closeAlert
-          });
+          setAlertData({ visible: true, title: 'Error de Guardado', message: 'No pudimos guardar tu progreso.', type: 'destructive', confirmText: 'Entendido', onConfirm: closeAlert });
         }
       }
     });
   };
+
+  // 🚀 LA MAGIA DEL FANTASMA HABLADOR
+  const handleToggleSet = (exId: string, idx: number) => {
+    const isNowCompleted = !setsData[exId][idx].completed;
+    
+    // Leemos los datos ANTES de hacer el toggle
+    const currentSet = setsData[exId][idx];
+    const prevSet = previousSets[exId]?.[idx];
+    const equipoId = currentExercise.ejercicio.equipo_id;
+    const esPesoCorporal = [1, 3, 9, 10].includes(equipoId);
+    const esPorTiempo = currentExercise.ejercicio.es_por_tiempo || currentExercise.es_calentamiento;
+
+    toggleSetComplete(exId, idx); // Guardamos el estado real
+
+    if (isNowCompleted && isVoiceEnabled) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      
+      let mensaje = `Serie ${idx + 1} lista. `;
+      
+      if (esPorTiempo) {
+        mensaje += `Hiciste ${currentSet.reps} segundos. `;
+        if (prevSet) mensaje += `Tu fantasma era de ${prevSet.reps} segundos.`;
+      } else if (esPesoCorporal) {
+        mensaje += `Hiciste ${currentSet.reps} repeticiones. `;
+        if (prevSet) mensaje += `Tu fantasma era de ${prevSet.reps} repeticiones.`;
+      } else {
+        const currentKg = parseFloat(currentSet.kg) || 0;
+        const currentReps = parseInt(currentSet.reps) || 0;
+        mensaje += `Pusiste ${currentKg} kilos por ${currentReps} repeticiones. `;
+
+        if (prevSet) {
+          const prevKg = parseFloat(prevSet.kg) || 0;
+          if (currentKg > prevKg) {
+            mensaje += `¡Excelente! Superaste a tu fantasma que levantó ${prevKg} kilos.`;
+          } else if (currentKg < prevKg) {
+            mensaje += `Tu fantasma levantó ${prevKg} kilos. ¡A la próxima lo rompes!`;
+          } else {
+            mensaje += `Empataste exactamente con tu fantasma.`;
+          }
+        }
+      }
+
+      safeSpeak(mensaje);
+    }
+  };
+
   const shareWorkout = async () => {
     try {
       if (viewShotRef.current && viewShotRef.current.capture) {
@@ -267,9 +371,7 @@ const handleFinish = () => {
             if (current.capture) {
               const uri = await current.capture();
               const isAvailable = await Sharing.isAvailableAsync();
-              if (isAvailable && uri) {
-                await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '¡Mira mi entrenamiento en FitMax!' });
-              }
+              if (isAvailable && uri) await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: '¡Mira mi entrenamiento en FitMax!' });
             }
           } catch (e) { console.error('Error al capturar imagen:', e); }
         }, 300);
@@ -281,14 +383,9 @@ const handleFinish = () => {
     return (
       <View style={s.container}>
         <View style={[s.header, { paddingTop: insets.top + 8 }]}>
-          <View style={s.skeletonBtn} />
-          <View style={s.skeletonTimer} />
-          <View style={s.skeletonBtn} />
+          <View style={s.skeletonBtn} /><View style={s.skeletonTimer} /><View style={s.skeletonBtn} />
         </View>
-        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.xl }}>
-          <View style={s.skeletonTitle} />
-          <View style={s.skeletonCard} />
-        </View>
+        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.xl }}><View style={s.skeletonTitle} /><View style={s.skeletonCard} /></View>
       </View>
     );
   }
@@ -305,24 +402,31 @@ const handleFinish = () => {
 
       {!showSummary && (
         <LinearGradient colors={['#111111', 'transparent']} style={[s.header, { paddingTop: insets.top + 8 }]}>
-          <PressableCard style={s.closeBtn} onPress={() => router.back()} disabled={isSaving}>
+          <PressableCard style={s.closeBtn} onPress={() => { Speech.stop(); router.back(); }} disabled={isSaving}>
             <Ionicons name="close" size={22} color="#fff" />
           </PressableCard>
+          
           <TimerIsland ref={timerRef} label="SESIÓN ACTIVA" />
           
-          <PressableCard 
-            style={[
-              s.finishBtn, 
-              hasCompletedSets && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.6)' }
-            ]} 
-            onPress={handleFinish} 
-            disabled={isSaving}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Ionicons name="flag" size={14} color="#000" />
-              <Text style={s.finishBtnText}>FIN</Text>
-            </View>
-          </PressableCard>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            {/* 🚀 BOTON DE MUTE/UNMUTE RAPIDO */}
+            <PressableCard 
+              style={[s.closeBtn, isVoiceEnabled && { backgroundColor: colors.primaryFaded, borderColor: colors.primary, borderWidth: 1 }]} 
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                if (isVoiceEnabled) Speech.stop();
+                setIsVoiceEnabled(!isVoiceEnabled);
+              }}
+            >
+              <Ionicons name={isVoiceEnabled ? "volume-high" : "volume-mute"} size={20} color={isVoiceEnabled ? colors.primary : "#fff"} />
+            </PressableCard>
+
+            <PressableCard style={[s.finishBtn, hasCompletedSets && { borderWidth: 1, borderColor: 'rgba(255,0,0,0.6)' }]} onPress={handleFinish} disabled={isSaving}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Ionicons name="flag" size={14} color="#000" /><Text style={s.finishBtnText}>FIN</Text>
+              </View>
+            </PressableCard>
+          </View>
         </LinearGradient>
       )}
 
@@ -339,20 +443,16 @@ const handleFinish = () => {
               <View style={{ flex: 1 }}>
                 <Text style={s.exerciseName} numberOfLines={2}>{currentExercise.ejercicio.nombre}</Text>
                 {esCalentamiento && (
-                  <View style={s.warmupBadge}>
-                    <Text style={s.warmupBadgeText}>🔥 FASE DE CALENTAMIENTO</Text>
-                  </View>
+                  <View style={s.warmupBadge}><Text style={s.warmupBadgeText}>🔥 FASE DE CALENTAMIENTO</Text></View>
                 )}
               </View>
               <PressableCard onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setShowTechGuide(true); }} style={s.infoCircle}>
                 <Ionicons name="body-outline" size={20} color={colors.primary} />
               </PressableCard>
             </View>
-
             {currentExercise.ejercicio.regresion_de && (
               <PressableCard style={s.regresionBtn} onPress={() => handleRegresion(currentExercise.ejercicio.regresion_de)}>
-                <Ionicons name="arrow-down-circle" size={18} color={colors.primary} />
-                <Text style={s.regresionText}>¿Muy difícil? Cambiar a fácil</Text>
+                <Ionicons name="arrow-down-circle" size={18} color={colors.primary} /><Text style={s.regresionText}>¿Muy difícil? Cambiar a fácil</Text>
               </PressableCard>
             )}
           </View>
@@ -362,7 +462,7 @@ const handleFinish = () => {
               <Text style={[s.trackerCol, { flex: 0.5 }]}>SET</Text>
               <Text style={[s.trackerCol, { flex: 1, textAlign: 'center' }]}>ANTERIOR</Text>
               {!esPesoCorporal && <Text style={[s.trackerCol, { flex: 0.8 }]}>KG</Text>}
-              <Text style={[s.trackerCol, { flex: 0.8 }]}>{esPorTiempo ? 'SEGUNDOS' : 'REPS'}</Text>
+              <Text style={[s.trackerCol, { flex: 0.8 }]}>{esPorTiempo ? 'SEG' : 'REPS'}</Text>
               <Text style={[s.trackerCol, { flex: 0.5, textAlign: 'center' }]}>✓</Text>
             </View>
 
@@ -389,35 +489,27 @@ const handleFinish = () => {
                 <View key={index} style={[s.setRow, set.completed && s.setRowCompleted]}>
                   <Text style={[s.setNum, set.completed && s.setTextCompleted]}>{index + 1}</Text>
                   <Text style={[s.ghostText, set.completed && s.setTextCompleted]}>{ghostText}</Text>
-
                   {!esPesoCorporal && (
                     <View style={[s.inputWrapper, { flex: 0.8 }]}>
-                   <TextInput
-                      style={[s.input, set.completed && s.inputCompleted]}
-                      keyboardType="numeric" placeholder="0" placeholderTextColor={colors.textMuted}
-                      value={set.kg?.toString()} 
-                      onChangeText={(val) => updateCascadeSetData(currentExercise.id, index, 'kg', val)} 
-                      editable={!set.completed}
-                    />
+                      <TextInput
+                        style={[s.input, set.completed && s.inputCompleted]}
+                        keyboardType="numeric" placeholder="0" placeholderTextColor={colors.textMuted}
+                        value={set.kg?.toString()} 
+                        onChangeText={(val) => updateCascadeSetData(currentExercise.id, index, 'kg', val)} 
+                        editable={!set.completed}
+                      />
                     </View>
                   )}
-
                   <View style={[s.inputWrapper, { flex: 0.8, marginLeft: esPesoCorporal ? 20 : 0 }]}>
-                  <TextInput
-                    style={[s.input, set.completed && s.inputCompleted]}
-                    keyboardType="numeric" placeholder={String(currentExercise.repeticiones)} placeholderTextColor={colors.textMuted}
-                    value={set.reps?.toString()} 
-                    onChangeText={(val) => updateCascadeSetData(currentExercise.id, index, 'reps', val)} 
-                    editable={!set.completed}
-                  />
+                    <TextInput
+                      style={[s.input, set.completed && s.inputCompleted]}
+                      keyboardType="numeric" placeholder={String(currentExercise.repeticiones)} placeholderTextColor={colors.textMuted}
+                      value={set.reps?.toString()} 
+                      onChangeText={(val) => updateCascadeSetData(currentExercise.id, index, 'reps', val)} 
+                      editable={!set.completed}
+                    />
                   </View>
-                  
-                  <TouchableOpacity 
-                    style={[s.checkBtn, set.completed && s.checkBtnCompleted]} 
-                    onPress={() => toggleSetComplete(currentExercise.id, index)}
-                    hitSlop={{ top: 15, bottom: 15, left: 10, right: 10 }}
-                    activeOpacity={0.7}
-                  >
+                  <TouchableOpacity style={[s.checkBtn, set.completed && s.checkBtnCompleted]} onPress={() => handleToggleSet(currentExercise.id, index)} activeOpacity={0.7}>
                     <Ionicons name="checkmark" size={20} color={set.completed ? '#000' : colors.border} />
                   </TouchableOpacity>
                 </View>
@@ -426,7 +518,7 @@ const handleFinish = () => {
           </View>
 
           {isResting ? (
-            <RestTimerIsland initialSeconds={restSeconds} onFinish={skipRest} onSkip={skipRest} />
+            <RestTimerIsland initialSeconds={restSeconds} onFinish={skipRest} onSkip={skipRest} speakFn={safeSpeak} />
           ) : allSetsDone ? (
             <View style={s.nextCard}>
               <PressableCard style={buttons.primary} onPress={() => {
@@ -439,9 +531,7 @@ const handleFinish = () => {
           ) : null}
           
           {currentExerciseIndex > 0 && !isResting && (
-            <PressableCard style={buttons.ghost} onPress={goToPrevExercise}>
-              <Text style={buttons.ghostText}>← Volver al ejercicio anterior</Text>
-            </PressableCard>
+            <PressableCard style={buttons.ghost} onPress={goToPrevExercise}><Text style={buttons.ghostText}>← Volver al anterior</Text></PressableCard>
           )}
         </ScrollView>
       )}
@@ -449,39 +539,17 @@ const handleFinish = () => {
       <Modal visible={showTechGuide} animationType="slide" transparent={true} onRequestClose={() => setShowTechGuide(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.modalContent, { paddingBottom: insets.bottom + 20 }]}>
-            
             <View style={s.modalHeader}>
               <View style={s.modalHandle} />
-              <TouchableOpacity 
-                onPress={() => setShowTechGuide(false)} 
-                style={s.modalClose}
-                hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                activeOpacity={0.7}
-              >
+              <TouchableOpacity onPress={() => setShowTechGuide(false)} style={s.modalClose} activeOpacity={0.7}>
                 <Ionicons name="close-circle" size={36} color={colors.textSecondary} />
               </TouchableOpacity>
             </View>
-
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={s.modalTitle}>{currentExercise.ejercicio.nombre}</Text>
               <ExerciseGuideCard ejercicio={currentExercise.ejercicio} compact={true} />
-              <TouchableOpacity 
-                style={{
-                  backgroundColor: colors.primary, padding: 15, borderRadius: radius.lg, 
-                  flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8,
-                  marginTop: 20, marginBottom: 20
-                }}
-                activeOpacity={0.8}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setShowTechGuide(false); // Cerramos el modal primero
-                  setTimeout(() => {
-                    router.push(`/exercise/${currentExercise.ejercicio_id}`); // Abrimos el video
-                  }, 100); // Pequeño delay para que no brinque la animación
-                }}
-              >
-                <Ionicons name="play-circle" size={24} color="#000" />
-                <Text style={{ color: '#000', fontWeight: 'bold', fontSize: 16 }}>Ver Video de Ejecución</Text>
+              <TouchableOpacity style={s.videoModalBtn} activeOpacity={0.8} onPress={() => { setShowTechGuide(false); setTimeout(() => router.push(`/exercise/${currentExercise.ejercicio_id}`), 100); }}>
+                <Ionicons name="play-circle" size={24} color="#000" /><Text style={s.videoModalBtnText}>Ver Video de Ejecución</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
@@ -491,20 +559,12 @@ const handleFinish = () => {
       {showSummary && (
         <ScrollView style={[StyleSheet.absoluteFillObject, { backgroundColor: '#000', zIndex: 50 }]} contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingTop: insets.top + spacing.xl, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
           <Text style={s.summaryMainTitle}>¡MISIÓN CUMPLIDA!</Text>
-
           <SessionReportCard sesionId={savedSessionId} rutinaId={rutinaId as string} nombreRutina={rutina?.nombre} />
-
-          <View style={{ height: spacing.xl }} />
-
           <ViewShot ref={viewShotRef} options={{ format: 'png', quality: 1.0 }} style={s.shareCardContainer}>
             <LinearGradient colors={['#1a1a1c', '#000000']} style={s.shareCard}>
-              <View style={s.shareHeader}>
-                <Ionicons name="flame" size={28} color={colors.primary} /><Text style={s.shareBrand}>FitMax App</Text>
-              </View>
+              <View style={s.shareHeader}><Ionicons name="flame" size={28} color={colors.primary} /><Text style={s.shareBrand}>FitMax App</Text></View>
               <Text style={s.shareRoutineName}>{rutina?.nombre || 'Rutina'}</Text>
-              <View style={s.aiMessageBox}>
-                {cargandoIA ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={s.aiMessageText}>{aiMessage}</Text>}
-              </View>
+              <View style={s.aiMessageBox}>{cargandoIA ? <ActivityIndicator color={colors.primary} size="small" /> : <Text style={s.aiMessageText}>{aiMessage}</Text>}</View>
               <View style={s.shareMetrics}>
                 <View style={s.shareMetricBox}><Text style={s.shareMetricValue}>{workoutStats.finalTimeStr}</Text><Text style={s.shareMetricLabel}>TIEMPO</Text></View>
                 <View style={s.shareMetricDiv} />
@@ -515,26 +575,17 @@ const handleFinish = () => {
               <View style={s.shareFooter}><Text style={s.shareFooterText}>Únete a FitMax. Entrena Inteligente.</Text></View>
             </LinearGradient>
           </ViewShot>
-
           <View style={s.summaryActions}>
-            <PressableCard style={s.shareInstagramBtn} onPress={shareWorkout} >
-              <Ionicons name="logo-instagram" size={24} color="#fff" /><Text style={s.shareInstagramText}>Compartir en Historias</Text>
-            </PressableCard>
-            <PressableCard style={[buttons.ghost, {marginTop: 10}]} onPress={() => router.replace('/(tabs)/home')}>
-              <Text style={buttons.ghostText}>Volver al Inicio</Text>
-            </PressableCard>
+            <PressableCard style={s.shareInstagramBtn} onPress={shareWorkout}><Ionicons name="logo-instagram" size={24} color="#fff" /><Text style={s.shareInstagramText}>Compartir en Historias</Text></PressableCard>
+            <PressableCard style={[buttons.ghost, {marginTop: 10}]} onPress={() => { Speech.stop(); router.replace('/(tabs)/home'); }}><Text style={buttons.ghostText}>Volver al Inicio</Text></PressableCard>
           </View>
         </ScrollView>
       )}
 
       {isSaving && (
-        <View style={s.savingOverlay}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={s.savingText}>GUARDANDO SESIÓN...</Text>
-        </View>
+        <View style={s.savingOverlay}><ActivityIndicator size="large" color={colors.primary} /><Text style={s.savingText}>GUARDANDO SESIÓN...</Text></View>
       )}
 
-      {/* 🚀 NUESTRO CUSTOM ALERT RENDERIZADO AL FINAL */}
       <CustomAlert {...alertData} />
       
     </KeyboardAvoidingView>
@@ -543,7 +594,6 @@ const handleFinish = () => {
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#000' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing.lg, paddingBottom: spacing.lg },
   closeBtn: { width: 40, height: 40, borderRadius: radius.full, backgroundColor: colors.surface, justifyContent: 'center', alignItems: 'center' },
   timerBox: { alignItems: 'center' },
@@ -583,13 +633,14 @@ const s = StyleSheet.create({
   skipBtn: { padding: 10 },
   skipText: { ...typography.small },
   nextCard: { marginTop: spacing.md },
-  prevLink: { marginTop: spacing.lg, alignItems: 'center' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: '#111', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, height: '85%' },
   modalHeader: { height: 60, alignItems: 'center', justifyContent: 'center', position: 'relative' },
   modalHandle: { width: 40, height: 4, backgroundColor: '#333', borderRadius: 2 },
   modalClose: { position: 'absolute', right: 0, top: 10, padding: 5, zIndex: 10 },
   modalTitle: { ...typography.h2, textTransform: 'uppercase', marginBottom: 20, textAlign: 'center' },
+  videoModalBtn: { backgroundColor: colors.primary, padding: 15, borderRadius: radius.lg, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 20, marginBottom: 20 },
+  videoModalBtnText: { color: '#000', fontWeight: 'bold', fontSize: 16 },
   savingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 100 },
   savingText: { ...typography.caption, color: colors.primary, marginTop: 16 },
   summaryMainTitle: { ...typography.h1, marginBottom: 20, textAlign: 'center' },
@@ -610,7 +661,6 @@ const s = StyleSheet.create({
   summaryActions: { width: '100%', marginTop: 20, gap: 16 },
   shareInstagramBtn: { flexDirection: 'row', backgroundColor: '#E1306C', paddingVertical: 16, borderRadius: radius.full, justifyContent: 'center', alignItems: 'center', gap: 10 },
   shareInstagramText: { ...typography.label, color: '#fff' },
-
   skeletonBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surface },
   skeletonTimer: { width: 120, height: 40, borderRadius: radius.md, backgroundColor: colors.surface },
   skeletonTitle: { width: '60%', height: 30, borderRadius: radius.sm, backgroundColor: colors.surface, marginBottom: 20 },

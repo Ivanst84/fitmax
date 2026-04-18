@@ -1,9 +1,18 @@
 import { useState } from 'react';
 
-// 🚀 EXTRACTOR BLINDADO
+// 🚀 EXTRACTOR BLINDADO (Nivel Militar para Llama 3.1)
 const intentarRecuperarJSON = (texto: string | undefined | null) => {
   if (!texto) throw new Error("La IA no respondió. Intenta de nuevo.");
   let limpio = texto.replace(/```json/g, '').replace(/```/g, '').trim();
+  
+  // 🛡️ FIX SALVAVIDAS: Groq a veces repite texto al final. 
+  // Obligamos a extraer solo desde la primera { hasta la última }
+  const primerLlave = limpio.indexOf('{');
+  const ultimaLlave = limpio.lastIndexOf('}');
+  if (primerLlave !== -1 && ultimaLlave !== -1 && ultimaLlave > primerLlave) {
+    limpio = limpio.substring(primerLlave, ultimaLlave + 1);
+  }
+
   try { return JSON.parse(limpio); } 
   catch (e) {
     try {
@@ -39,11 +48,13 @@ export const useGeminiRoutine = () => {
 
   const generateRoutine = async (respuestas: Record<string, any>, catalogoEjercicios: any[]) => {
     setLoading(true); setError(null);
+    
+    // 🚀 LLAMADAS A VARIABLES DE ENTORNO
     const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY; 
-    if (!apiKey) throw new Error("Falta la clave de Gemini");
+    const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
+    const CEREBRAS_API_KEY = process.env.EXPO_PUBLIC_CEREBRAS_API_KEY;
 
-    const GROQ_API_KEY = "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";
-    const CEREBRAS_API_KEY = "csk-wcmxp8v8jncrw8pm3ecfkxmj3kvpwj28hh6ekt4jhy5hefxd";
+    if (!apiKey) throw new Error("Falta la clave de Gemini");
 
     try {
       let nivelUsuarioNum = 2; 
@@ -82,7 +93,8 @@ export const useGeminiRoutine = () => {
         return `#${idCorto}: ${ej.nombre}`;
       }).join('\n');
 
-const systemInstruction = `Eres un Master Coach Experto. REGLAS ESTRICTAS E INQUEBRANTABLES:
+      // ⚠️ TU PROMPT INTACTO (Solo agregué "Usa títulos MUY CORTOS en 'n'")
+      const systemInstruction = `Eres un Master Coach Experto. REGLAS ESTRICTAS E INQUEBRANTABLES:
 1. DURACIÓN DEL PLAN: EXACTAMENTE ${diasSugeridos} días de entrenamiento. PROHIBIDO generar más de ${diasSugeridos} días.
 2. CANTIDAD EXACTA: EXACTAMENTE ${numEjercicios} ejercicios por día. PROHIBIDO INCLUIR TODO EL CATÁLOGO.
 3. VARIEDAD EXTREMA: Cada día debe tener ejercicios DIFERENTES.
@@ -93,11 +105,11 @@ const systemInstruction = `Eres un Master Coach Experto. REGLAS ESTRICTAS E INQU
    - Si el objetivo es HIPERTROFIA: 3-4 series (s), 8-12 reps (r), 60 seg descanso (t).
    - Si el objetivo es PERDER GRASA: 3-4 series (s), 15-20 reps (r), 45 seg descanso (t).
    - Calentamientos SIEMPRE son 1 serie, "60s" reps, 0 descanso.
-7. FORMATO OBLIGATORIO: DEVUELVE ÚNICA Y EXCLUSIVAMENTE UN OBJETO JSON VÁLIDO.
+7. FORMATO OBLIGATORIO: DEVUELVE ÚNICA Y EXCLUSIVAMENTE UN OBJETO JSON VÁLIDO. Usa títulos MUY CORTOS para el día en "n".
 Ejemplo exacto de salida (Usa los números calculados, NO copies esto literal):
 {
   "rutina": [
-    {"d":1,"n":"Día 1 - Tren Superior","desc":"Breve","ejs":[{"id":numero,"s":numero_series,"r":"numero_reps","t":segundos_descanso,"cal":true}, ...]}
+    {"d":1,"n":"Pecho/Tríceps","desc":"Breve","ejs":[{"id":numero,"s":numero_series,"r":"numero_reps","t":segundos_descanso,"cal":true}, ...]}
   ]
 }`;
 
@@ -137,14 +149,16 @@ ${catalogoSimplificado}`;
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         textoCrudo = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        iaUtilizada = "🔥 GEMINI 2.5 FLASH";
+        iaUtilizada = "🔥 GEMINI";
 
       } catch (errGemini: any) {
         console.warn(`⚠️ Gemini falló (${errGemini.message}). Despertando a Groq...`);
         
         try {
+          if (!GROQ_API_KEY) throw new Error("API Groq faltante en .env");
           console.log(`📡 CABEZA 2: Probando con [Groq Llama-3.1]...`);
-          const responseGroq = await fetch('', {
+          // 🚀 FIX: URL de GROQ agregada
+          const responseGroq = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${GROQ_API_KEY}`,
@@ -156,7 +170,7 @@ ${catalogoSimplificado}`;
                 { role: 'system', content: systemInstruction },
                 { role: 'user', content: promptDelUsuario }
               ],
-              temperature: 0.7,
+              temperature: 0.2, // 🚀 FIX: Temperatura fría para evitar JSON roto
               max_tokens: 3000,
               response_format: { type: "json_object" } 
             })
@@ -170,6 +184,7 @@ ${catalogoSimplificado}`;
           console.warn(`⚠️ Groq falló (${errGroq.message}). Despertando a Cerebras...`);
        
           try {
+            if (!CEREBRAS_API_KEY) throw new Error("API Cerebras faltante en .env");
             console.log(`📡 CABEZA 3: Probando con [Cerebras Llama-3.1]...`);
             const responseCerebras = await fetch('https://api.cerebras.ai/v1/chat/completions', {
               method: 'POST',
@@ -183,7 +198,7 @@ ${catalogoSimplificado}`;
                   { role: 'system', content: systemInstruction },
                   { role: 'user', content: promptDelUsuario }
                 ],
-                temperature: 0.7,
+                temperature: 0.2, // 🚀 FIX: Temperatura fría para evitar JSON roto
                 max_tokens: 3000,
                 response_format: { type: "json_object" } 
               })
@@ -246,7 +261,7 @@ ${catalogoSimplificado}`;
       } else if (err.message === 'RATE_LIMIT' || err.message.includes('429')) {
         setError("Demasiadas peticiones. Por favor, espera un momento.");
       } else {
-        setError("No se pudo generar la rutina. Revisa tu conexión a internet.");
+        setError("No se pudo generar la rutina. Revisa tu conexión a internet o intenta de nuevo.");
       }
       throw err;
     } finally { 

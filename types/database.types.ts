@@ -15,6 +15,10 @@ export interface Ejercicio {
   video_url?: string;
   imagen_url?: string;
   grupo_muscular?: string;
+  equipo_id?: number;
+  musculo_id?: number;
+  tips?: string; 
+  nivel_id ?: number;
 }
 
 // Representa la relación entre Rutina y Ejercicio (si aplica en tu BD)
@@ -36,4 +40,7 @@ export interface HistorialSesion {
   duracion_segundos: number;
   total_series_completadas: number;
   fecha: string;
+  volumen_total_kg: number;
+  calorias_quemadas: number;
+  
 }
