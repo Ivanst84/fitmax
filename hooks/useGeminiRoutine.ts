@@ -1,12 +1,9 @@
 import { useState } from 'react';
 
-// 🚀 EXTRACTOR BLINDADO (Nivel Militar para Llama 3.1)
 const intentarRecuperarJSON = (texto: string | undefined | null) => {
   if (!texto) throw new Error("La IA no respondió. Intenta de nuevo.");
   let limpio = texto.replace(/```json/g, '').replace(/```/g, '').trim();
   
-  // 🛡️ FIX SALVAVIDAS: Groq a veces repite texto al final. 
-  // Obligamos a extraer solo desde la primera { hasta la última }
   const primerLlave = limpio.indexOf('{');
   const ultimaLlave = limpio.lastIndexOf('}');
   if (primerLlave !== -1 && ultimaLlave !== -1 && ultimaLlave > primerLlave) {
@@ -28,18 +25,35 @@ const intentarRecuperarJSON = (texto: string | undefined | null) => {
   throw new Error("No se pudo procesar la respuesta de la IA.");
 };
 
-// 🛡️ FUNCIÓN DE SEGURIDAD CLÍNICA
+// 🛡️ FUNCIÓN DE SEGURIDAD CLÍNICA (Actualizada con Catálogo Real)
 const obtenerReemplazoSeguro = (nombreMalo: string, catalogo: any[]) => {
   const n = nombreMalo.toLowerCase();
-  let keyword = '';
-  if (n.includes('jumping') || n.includes('burpee') || n.includes('cuerda')) keyword = 'marcha'; 
-  else if (n.includes('sentadilla') || n.includes('barra')) keyword = 'silla'; 
-  else if (n.includes('flexion') || n.includes('push')) keyword = 'inclinada'; 
-  else if (n.includes('climber')) keyword = 'plancha'; 
+  
+  // 🚨 PELIGRO 1: Saltos, Cuerda, Burpees (Impacto de Rodilla) -> Cambiar a Elíptica o Battle Ropes
+  if (n.includes('jumping') || n.includes('burpee') || n.includes('cuerda') || n.includes('salto') || n.includes('jack')) {
+    return catalogo.find(c => c.nombre.includes('Máquina Elíptica')) 
+        || catalogo.find(c => c.nombre.includes('Battle Ropes'));
+  }
+  
+  // 🚨 PELIGRO 2: Sentadillas libres pesadas o Pistol -> Cambiar a Silla o Prensa Horizontal
+  if (n.includes('sentadilla libre') || n.includes('barra') || n.includes('pistol') || n.includes('una pierna')) {
+    return catalogo.find(c => c.nombre.includes('Sentadilla en Silla')) 
+        || catalogo.find(c => c.nombre.includes('Prensa Horizontal'));
+  }
+  
+  // 🚨 PELIGRO 3: Flexiones de piso o Fondos libres -> Cambiar a Flexiones en Pared
+  if (n.includes('flexion') || n.includes('push') || n.includes('fondo') || n.includes('dip')) {
+    return catalogo.find(c => c.nombre.includes('Flexiones en Pared'));
+  }
+  
+  // 🚨 PELIGRO 4: Dominadas o Remo colgado (Peso muerto en brazos) -> Cambiar a Remo en Polea
+  if (n.includes('dominada') || n.includes('pull-up') || n.includes('invertido')) {
+    return catalogo.find(c => c.nombre.includes('Remo Sentado en Polea')) 
+        || catalogo.find(c => c.nombre.includes('Jalón al Pecho'));
+  }
 
-  let seguro = catalogo.find(c => c.nombre.toLowerCase().includes(keyword) && c.nivel_id === 1);
-  if (!seguro) seguro = catalogo.find(c => c.nivel_id === 1 && !c.nombre.toLowerCase().includes('jumping')); 
-  return seguro;
+  // 🛡️ FALLBACK ABSOLUTO: Si nada coincide, dale un estiramiento seguro
+  return catalogo.find(c => c.tipo === 'movilidad') || catalogo[0];
 };
 
 export const useGeminiRoutine = () => {
@@ -49,7 +63,6 @@ export const useGeminiRoutine = () => {
   const generateRoutine = async (respuestas: Record<string, any>, catalogoEjercicios: any[]) => {
     setLoading(true); setError(null);
     
-    // 🚀 LLAMADAS A VARIABLES DE ENTORNO
     const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY; 
     const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY;
     const CEREBRAS_API_KEY = process.env.EXPO_PUBLIC_CEREBRAS_API_KEY;
@@ -93,7 +106,6 @@ export const useGeminiRoutine = () => {
         return `#${idCorto}: ${ej.nombre}`;
       }).join('\n');
 
-      // ⚠️ TU PROMPT INTACTO (Solo agregué "Usa títulos MUY CORTOS en 'n'")
       const systemInstruction = `Eres un Master Coach Experto. REGLAS ESTRICTAS E INQUEBRANTABLES:
 1. DURACIÓN DEL PLAN: EXACTAMENTE ${diasSugeridos} días de entrenamiento. PROHIBIDO generar más de ${diasSugeridos} días.
 2. CANTIDAD EXACTA: EXACTAMENTE ${numEjercicios} ejercicios por día. PROHIBIDO INCLUIR TODO EL CATÁLOGO.
@@ -105,7 +117,19 @@ export const useGeminiRoutine = () => {
    - Si el objetivo es HIPERTROFIA: 3-4 series (s), 8-12 reps (r), 60 seg descanso (t).
    - Si el objetivo es PERDER GRASA: 3-4 series (s), 15-20 reps (r), 45 seg descanso (t).
    - Calentamientos SIEMPRE son 1 serie, "60s" reps, 0 descanso.
-7. FORMATO OBLIGATORIO: DEVUELVE ÚNICA Y EXCLUSIVAMENTE UN OBJETO JSON VÁLIDO. Usa títulos MUY CORTOS para el día en "n".
+
+7. RESTRICCIÓN DE PESO: Si el usuario pesa más de 100kg, PROHIBIDO incluir 
+   cualquier ejercicio que requiera soportar el peso corporal colgado 
+   (remo invertido bajo mesa, fondos entre sillas con todo el peso).
+   Sustitúyelos por variantes en piso o pared.
+
+8. VOLUMEN PARA PRINCIPIANTES PESADOS: Si el usuario pesa más de 90kg 
+   y es principiante, máximo 3 series de 10-12 reps por ejercicio. 
+   Nunca 4 series de 20 reps en semana 1.
+
+9. PROHIBIDO REPETIR ejercicios entre días del mismo plan. 
+    Si el catálogo tiene más de 20 opciones para ese equipo,  cada día debe tener ejercicios completamente distintos.
+10. FORMATO OBLIGATORIO: DEVUELVE ÚNICA Y EXCLUSIVAMENTE UN OBJETO JSON VÁLIDO. Usa títulos MUY CORTOS para el día en "n".
 Ejemplo exacto de salida (Usa los números calculados, NO copies esto literal):
 {
   "rutina": [
@@ -120,17 +144,17 @@ Nivel: ${respuestas.nivel}
 Objetivo Principal: ${respuestas.objetivo}
 Frecuencia: ${respuestas.frecuencia} días
 Enfoque Muscular: ${respuestas.enfoque}
-
+Peso exacto: ${respuestas.peso_kg} 
 INSTRUCCIÓN: Genera el plan priorizando VARIEDAD EXTREMA y ajustando las series/reps al Objetivo Principal. SOLO usa IDs de este catálogo:
 ${catalogoSimplificado}`;
       
       let textoCrudo = '';
       let iaUtilizada = ''; 
 
-      try {
-        console.log(`📡 CABEZA 1: Probando con [Gemini 2.5 Flash]...`);
+    try {
+        console.log(`📡 CABEZA 1: Probando con [Gemini]...`);
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000); 
+        const timeoutId = setTimeout(() => controller.abort(), 30000); 
         
         const response = await fetch(
            `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`,
@@ -146,18 +170,25 @@ ${catalogoSimplificado}`;
           }
         );
         clearTimeout(timeoutId);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        if (!response.ok) {
+          const googleError = await response.text(); 
+          console.error(` GOOGLE RECHAZÓ LA PETICIÓN (HTTP ${response.status}):`);
+          console.error(googleError); 
+          throw new Error(`HTTP ${response.status}`);
+        }
+        
         const data = await response.json();
         textoCrudo = data.candidates?.[0]?.content?.parts?.[0]?.text;
         iaUtilizada = "🔥 GEMINI";
 
       } catch (errGemini: any) {
-        console.warn(`⚠️ Gemini falló (${errGemini.message}). Despertando a Groq...`);
+        console.error(`🔍 DETALLE DEL FALLO GEMINI:`, errGemini);
+        console.warn(`⚠️ Gemini abortado. Despertando a Groq...`);
         
         try {
           if (!GROQ_API_KEY) throw new Error("API Groq faltante en .env");
           console.log(`📡 CABEZA 2: Probando con [Groq Llama-3.1]...`);
-          // 🚀 FIX: URL de GROQ agregada
           const responseGroq = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
             headers: {
@@ -170,7 +201,7 @@ ${catalogoSimplificado}`;
                 { role: 'system', content: systemInstruction },
                 { role: 'user', content: promptDelUsuario }
               ],
-              temperature: 0.2, // 🚀 FIX: Temperatura fría para evitar JSON roto
+              temperature: 0.2, 
               max_tokens: 3000,
               response_format: { type: "json_object" } 
             })
@@ -198,7 +229,7 @@ ${catalogoSimplificado}`;
                   { role: 'system', content: systemInstruction },
                   { role: 'user', content: promptDelUsuario }
                 ],
-                temperature: 0.2, // 🚀 FIX: Temperatura fría para evitar JSON roto
+                temperature: 0.2, 
                 max_tokens: 3000,
                 response_format: { type: "json_object" } 
               })
@@ -209,53 +240,76 @@ ${catalogoSimplificado}`;
             iaUtilizada = "🧠 CEREBRAS (Llama 3.1)";
 
           } catch (errCerebras: any) {
-            console.error("❌ TODAS LAS CABEZAS FUERON DESTRUIDAS.");
+            console.error(" TODAS LAS CABEZAS FUERON DESTRUIDAS.");
             throw new Error("Servidores sobrecargados. Todas las APIs fallaron.");
           }
         }
       }
 
-      console.log(`✅ ¡ÉXITO! La rutina fue generada por: ${iaUtilizada}`);
+     console.log(` ¡ÉXITO! La rutina fue generada por: ${iaUtilizada}`);
 
       const resJSON = intentarRecuperarJSON(textoCrudo);        
       const diasRaw = Array.isArray(resJSON) ? resJSON : (resJSON.rutina || resJSON.plan || resJSON.days || resJSON.dias || []);
 
       if (!diasRaw || diasRaw.length === 0) throw new Error("La IA devolvió un plan vacío.");
 
-      return diasRaw.map((dia: any, index: number) => ({
-        dia_semana_sugerido: dia.d || index + 1,
-        dia_nombre: dia.n || `Día ${index + 1}`,
-        descripcion: dia.desc || "Entrenamiento del día",
-        ejercicios: (dia.ejs || []).map((e: any, idx: number) => {
-          
-          let finalEjercicioId = mapaReferencia[Number(e.id)] || e.id;
+      return diasRaw.map((dia: any, index: number) => {
+        const calentamientosSeguros = catalogoEjercicios.filter(
+          c => c.tipo === 'movilidad' || (c.tipo === 'cardio' && c.nivel_id === 1)
+        );
+        const calentamientoDelDia = calentamientosSeguros.length > 0 
+          ? calentamientosSeguros[Math.floor(Math.random() * calentamientosSeguros.length)] 
+          : null;
 
-          if (requiereBajoImpacto) {
-            const ejOriginal = catalogoEjercicios.find(c => c.id === finalEjercicioId);
-            if (ejOriginal) {
-              const n = ejOriginal.nombre.toLowerCase();
-              const prohibidos = ['jumping', 'burpee', 'cuerda', 'climber', 'sentadilla con barra', 'push-up'];
-              
-              if (prohibidos.some(p => n.includes(p)) || n === 'flexiones') {
-                const reemplazoSeguro = obtenerReemplazoSeguro(ejOriginal.nombre, catalogoEjercicios);
-                if (reemplazoSeguro) finalEjercicioId = reemplazoSeguro.id;
+        return {
+          dia_semana_sugerido: dia.d || index + 1,
+          dia_nombre: dia.n || `Día ${index + 1}`,
+          descripcion: dia.desc || "Entrenamiento del día",
+          ejercicios: (dia.ejs || []).map((e: any, idx: number) => {
+            
+            let finalEjercicioId = mapaReferencia[Number(e.id)] || e.id;
+            const esElPrimerEjercicio = idx === 0;
+
+            if (esElPrimerEjercicio && calentamientoDelDia) {
+              finalEjercicioId = calentamientoDelDia.id;
+            } 
+           else if (requiereBajoImpacto && !esElPrimerEjercicio) {
+              const ejOriginal = catalogoEjercicios.find(c => c.id === finalEjercicioId);
+              if (ejOriginal) {
+                const n = ejOriginal.nombre.toLowerCase();
+                
+                const esPeligroso = n.includes('jumping') || n.includes('burpee') || 
+                                    n.includes('cuerda') || n.includes('salto') || 
+                                    n.includes('jack') || n.includes('sentadilla libre') || 
+                                    n.includes('barra') || n.includes('pistol') || 
+                                    n.includes('una pierna') || n.includes('flexion') || 
+                                    n.includes('push') || n.includes('fondo') || 
+                                    n.includes('dip') || n.includes('dominada') || 
+                                    n.includes('pull-up') || n.includes('invertido');
+                
+                if (esPeligroso) {
+                  const reemplazoSeguro = obtenerReemplazoSeguro(ejOriginal.nombre, catalogoEjercicios);
+                  if (reemplazoSeguro && reemplazoSeguro.id !== finalEjercicioId) {
+                    finalEjercicioId = reemplazoSeguro.id;
+                  }
+                }
               }
             }
-          }
 
-          return {
-            ejercicio_id: finalEjercicioId,
-            series: e.s || 3,
-            repeticiones: String(e.r || "12"),
-            descanso_segundos: e.t || 60,
-            es_calentamiento: e.cal === true, 
-            orden: idx + 1
-          };
-        }),
-      }));
+            return {
+              ejercicio_id: finalEjercicioId,
+              series: esElPrimerEjercicio ? 1 : (e.s || 3),
+              repeticiones: esElPrimerEjercicio ? "60" : String(e.r || "12"),
+              descanso_segundos: esElPrimerEjercicio ? 0 : (e.t || 60),
+              es_calentamiento: esElPrimerEjercicio ? true : (e.cal === true), 
+              orden: idx + 1
+            };
+          }),
+        };
+      });
 
     } catch (err: any) {
-      console.error("❌ Error useGeminiRoutine:", err.message);
+      console.error(" Error useGeminiRoutine:", err.message);
       if (err.message.includes('503') || err.message.includes('500') || err.message.includes('sobrecargados')) {
         setError("Nuestros servidores de IA están un poco saturados. Por favor, espera un minuto y vuelve a intentarlo.");
       } else if (err.message === 'RATE_LIMIT' || err.message.includes('429')) {
