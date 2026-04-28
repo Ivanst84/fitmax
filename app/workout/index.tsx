@@ -54,7 +54,6 @@ const TimerIsland = forwardRef<TimerHandle, { label?: string }>(({ label = 'SESI
   );
 });
 
-// 🚀 REFACTOR: Pasamos speakFn como prop para que respete si la voz está apagada
 const RestTimerIsland = ({ initialSeconds, onFinish, onSkip, speakFn }: { initialSeconds: number, onFinish: () => void, onSkip: () => void, speakFn: (text: string) => void }) => {
   const endTimeRef = useRef(Date.now() + initialSeconds * 1000);
   const [secondsLeft, setSecondsLeft] = useState(initialSeconds);
@@ -75,7 +74,7 @@ const RestTimerIsland = ({ initialSeconds, onFinish, onSkip, speakFn }: { initia
               sound: true,
               priority: Notifications.AndroidNotificationPriority.HIGH,
             },
-            trigger: { seconds: initialSeconds },
+            trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: initialSeconds },
           });
         }
       } catch (error) {
@@ -137,7 +136,6 @@ export default function WorkoutSessionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   
-  // 🚀 ESTADO MAESTRO DE LA VOZ (Opt-In: Empieza apagado)
   const [isVoiceEnabled, setIsVoiceEnabled] = useState(false);
 
   const { rutina, ejercicios, cargando } = useRoutineDetail(rutinaId as string);
@@ -170,12 +168,10 @@ export default function WorkoutSessionScreen() {
   const timerRef = useRef<TimerHandle>(null);
   const viewShotRef = useRef<ViewShot>(null);
 
-  // 🚀 FUNCIÓN MAESTRA DE HABLA (Verifica si está encendido)
-// 🚀 FUNCIÓN MAESTRA DE HABLA (Con poder de interrupción)
   const safeSpeak = async (text: string, interrupt = true) => {
     if (!isVoiceEnabled) return;
     if (interrupt) {
-      await Speech.stop(); // 🛑 Aniquila cualquier audio que esté en la fila esperando
+      await Speech.stop(); // 
     }
     Speech.speak(text, { language: 'es-MX', rate: 0.95, pitch: 1.0 });
   };
@@ -239,23 +235,42 @@ useEffect(() => {
     });
   };
 
-  const generarMensajeIA = async (volumen: number, series: number, tiempoStr: string, kcal: number) => {
+ const generarMensajeIA = async (volumen: number, series: number, tiempoStr: string, kcal: number) => {
     try {
-      setCargandoIA(true);
-      const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
-      const prompt = `Actúa como un entrenador épico. Tu cliente terminó su rutina. Datos: Volumen: ${volumen} kg, Series: ${series}, Tiempo: ${tiempoStr}, Calorías: ${kcal} kcal. Genera un mensaje de victoria CORTO (2 líneas), explosivo. Cero markdown.`;
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-      });
-      const data = await response.json();
-      const msg = data.candidates[0].content.parts[0].text.trim();
-      setAiMessage(msg);
-      safeSpeak(`¡Entrenamiento finalizado! ${msg}`);
+      setCargandoIA(true); 
+
+      // 10 mensajes de coach real: motivadores, directos y cero "mamones".
+      // Usamos tus variables para que se sientan personalizados aunque sean locales.
+      const mensajes = [
+        `Entrenamiento completado. ${kcal} kcal quemadas y un paso más cerca de tu meta.`,
+        `¡Buen trabajo! Hoy moviste un volumen total de ${volumen} kg. Toca descansar.`,
+        `Misión cumplida. ${tiempoStr} muy bien invertidos. Tu cuerpo te lo agradece.`,
+        `Trabajo hecho. Completaste ${series} series como todo un profesional. ¡A recuperar!`,
+        `Nada como la sensación de haber cumplido. ¡Gran sesión hoy!`,
+        `Sesión terminada. Dejaste el sudor en el piso. ¡A comer bien y descansar!`,
+        `¡Excelente esfuerzo! Hoy fuiste más fuerte. Mantén esa disciplina.`,
+        `El entrenamiento de hoy ya está en la bolsa. Buen ritmo de trabajo.`,
+        `Un día más cumplido. Ese volumen de ${volumen} kg no se levanta solo.`,
+        `¡Acabaste! Buena técnica, buena energía. Nos vemos en la próxima sesión.`
+      ];
+
+      // Elegimos uno al azar
+      const mensajeAleatorio = mensajes[Math.floor(Math.random() * mensajes.length)];
+
+      // Simulamos un micro-retraso de 600ms para que la UI tenga una transición elegante
+      await new Promise(resolve => setTimeout(resolve, 600));
+
+      setAiMessage(mensajeAleatorio);
+      safeSpeak(`¡Entrenamiento finalizado! ${mensajeAleatorio}`);
+      
     } catch (error) { 
-      const fallbackMsg = `¡Eres una máquina! A descansar y crecer.`;
+      // Fallback por si acaso falla el random (casi imposible)
+      const fallbackMsg = `¡Excelente trabajo! A descansar y recuperarse.`;
       setAiMessage(fallbackMsg);
       safeSpeak(fallbackMsg);
-    } finally { setCargandoIA(false); }
+    } finally { 
+      setCargandoIA(false); 
+    }
   };
 
   const handleFinish = () => {
@@ -316,11 +331,9 @@ useEffect(() => {
     });
   };
 
-  // 🚀 LA MAGIA DEL FANTASMA HABLADOR
   const handleToggleSet = (exId: string, idx: number) => {
     const isNowCompleted = !setsData[exId][idx].completed;
     
-    // Leemos los datos ANTES de hacer el toggle
     const currentSet = setsData[exId][idx];
     const prevSet = previousSets[exId]?.[idx];
     const equipoId = currentExercise.ejercicio.equipo_id;

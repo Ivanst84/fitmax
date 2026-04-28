@@ -2,8 +2,9 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import Svg, { Polygon, Line, Text as SvgText } from 'react-native-svg'; // 🆕 LIBRERÍA NUEVA
+import Svg, { Polygon, Line, Text as SvgText } from 'react-native-svg';
 
+import { usePerformanceReport } from '../../hooks/usePerformanceReport';
 import { useProStats } from '../../hooks/useProStats';
 import { colors, spacing, radius } from '../../constants/theme';
 
@@ -18,6 +19,9 @@ const MUSCLE_NAMES: Record<string, string> = {
 export default function ProStatsWidget() {
   const [days, setDays] = useState<number>(30);
   const { stats, cargando } = useProStats(days);
+  
+  // 🚀 Hook del Reporte PDF
+  const { generateReport, generando } = usePerformanceReport();
 
   const handleTabPress = (val: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -39,29 +43,26 @@ export default function ProStatsWidget() {
   const lowerData = stats.radar.find(r => r.grupo_key === 'lower_body')?.total_volumen || 0;
   const coreData = stats.radar.find(r => r.grupo_key === 'core' || r.grupo_key === 'general')?.total_volumen || 0;
 
-  const maxVol = Math.max(upperData, lowerData, coreData, 1); // El valor máximo será el borde del triángulo
+  const maxVol = Math.max(upperData, lowerData, coreData, 1);
   const maxSeries = Math.max(...stats.heatmap.map(m => m.total_series), 1);
 
   // 📐 MATEMÁTICA DEL RADAR (SVG)
   const size = 200;
   const center = size / 2;
-  const radius = 70; // Tamaño del gráfico
+  const radiusSvg = 70; 
 
-  // Función para calcular las coordenadas X,Y de cada punto
   const getPoint = (value: number, max: number, angleDeg: number) => {
-    const r = (value / max) * radius;
+    const r = (value / max) * radiusSvg;
     const rad = (angleDeg * Math.PI) / 180;
     return `${center + r * Math.cos(rad)},${center + r * Math.sin(rad)}`;
   };
 
-  // Puntos del triángulo de datos (Arriba: -90°, Abajo Der: 30°, Abajo Izq: 150°)
   const dataPolygon = `
     ${getPoint(upperData, maxVol, -90)} 
     ${getPoint(lowerData, maxVol, 30)} 
     ${getPoint(coreData, maxVol, 150)}
   `;
 
-  // Puntos de los triángulos de fondo (guías)
   const bgPolygon100 = `${getPoint(1, 1, -90)} ${getPoint(1, 1, 30)} ${getPoint(1, 1, 150)}`;
   const bgPolygon66 = `${getPoint(0.66, 1, -90)} ${getPoint(0.66, 1, 30)} ${getPoint(0.66, 1, 150)}`;
   const bgPolygon33 = `${getPoint(0.33, 1, -90)} ${getPoint(0.33, 1, 30)} ${getPoint(0.33, 1, 150)}`;
@@ -89,17 +90,14 @@ export default function ProStatsWidget() {
 
         <View style={s.radarContainer}>
           <Svg height={size} width={size}>
-            {/* Guías de fondo (Triángulos grises) */}
             <Polygon points={bgPolygon100} fill="none" stroke="#333" strokeWidth="1" />
             <Polygon points={bgPolygon66} fill="none" stroke="#333" strokeWidth="1" />
             <Polygon points={bgPolygon33} fill="none" stroke="#333" strokeWidth="1" />
 
-            {/* Líneas desde el centro a las puntas */}
-            <Line x1={center} y1={center} x2={center} y2={center - radius} stroke="#333" strokeWidth="1" />
-            <Line x1={center} y1={center} x2={center + radius * Math.cos(30 * Math.PI/180)} y2={center + radius * Math.sin(30 * Math.PI/180)} stroke="#333" strokeWidth="1" />
-            <Line x1={center} y1={center} x2={center + radius * Math.cos(150 * Math.PI/180)} y2={center + radius * Math.sin(150 * Math.PI/180)} stroke="#333" strokeWidth="1" />
+            <Line x1={center} y1={center} x2={center} y2={center - radiusSvg} stroke="#333" strokeWidth="1" />
+            <Line x1={center} y1={center} x2={center + radiusSvg * Math.cos(30 * Math.PI/180)} y2={center + radiusSvg * Math.sin(30 * Math.PI/180)} stroke="#333" strokeWidth="1" />
+            <Line x1={center} y1={center} x2={center + radiusSvg * Math.cos(150 * Math.PI/180)} y2={center + radiusSvg * Math.sin(150 * Math.PI/180)} stroke="#333" strokeWidth="1" />
 
-            {/* El triángulo de datos real */}
             <Polygon 
               points={dataPolygon} 
               fill={colors.primary} 
@@ -108,7 +106,6 @@ export default function ProStatsWidget() {
               strokeWidth="2" 
             />
 
-            {/* Etiquetas (Textos en las puntas) */}
             <SvgText x={center} y={15} fill="#888" fontSize="10" fontWeight="bold" textAnchor="middle">SUPERIOR</SvgText>
             <SvgText x={size - 10} y={center + 50} fill="#888" fontSize="10" fontWeight="bold" textAnchor="end">INFERIOR</SvgText>
             <SvgText x={10} y={center + 50} fill="#888" fontSize="10" fontWeight="bold" textAnchor="start">CORE</SvgText>
@@ -135,8 +132,6 @@ export default function ProStatsWidget() {
                 
                 return (
                   <View key={index} style={s.muscleRow}>
-                    
-                    {/* INFO DEL MÚSCULO Y FATIGA */}
                     <View style={s.muscleInfo}>
                       <Text style={s.muscleName}>{MUSCLE_NAMES[musculo.slug_en] || musculo.slug_en}</Text>
                       <View style={s.fatigueBadge}>
@@ -154,20 +149,35 @@ export default function ProStatsWidget() {
                       </View>
                     </View>
 
-                    {/* BARRA DE INTENSIDAD */}
                     <View style={s.intensityContainer}>
                       <Text style={s.seriesText}>{musculo.total_series} series</Text>
                       <View style={s.intensityTrack}>
                         <View style={[s.intensityFill, { width: `${fillPct}%` }]} />
                       </View>
                     </View>
-
                   </View>
                 );
             })
           )}
         </View>
       </View>
+
+      {/* 📄 SECCIÓN 3: BOTÓN DE AUDITORÍA PDF */}
+      <TouchableOpacity 
+        style={s.exportBtn}
+        onPress={generateReport}
+        disabled={generando}
+      >
+        {generando ? (
+          <ActivityIndicator color="#000" />
+        ) : (
+          <>
+            <Ionicons name="document-text" size={20} color="#000" style={{ marginRight: 8 }} />
+            <Text style={s.exportBtnText}>EXPORTAR AUDITORÍA (PDF)</Text>
+          </>
+        )}
+      </TouchableOpacity>
+
     </View>
   );
 }
@@ -188,10 +198,8 @@ const s = StyleSheet.create({
   cardSub: { fontSize: 13, color: '#888', marginBottom: 20 },
   emptyText: { fontSize: 14, color: '#666', textAlign: 'center', paddingVertical: 20 },
 
-  // Contenedor del Gráfico SVG
   radarContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
 
-  // Mapa de calor
   heatmapList: { gap: 20 },
   muscleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   
@@ -203,5 +211,9 @@ const s = StyleSheet.create({
   intensityContainer: { width: '45%', alignItems: 'flex-end' },
   seriesText: { fontSize: 11, fontWeight: '600', color: '#888', marginBottom: 6 },
   intensityTrack: { width: '100%', height: 10, backgroundColor: '#222', borderRadius: 5, overflow: 'hidden' },
-  intensityFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 5 }
+  intensityFill: { height: '100%', backgroundColor: colors.primary, borderRadius: 5 },
+
+  // Nuevos estilos para el botón de exportar
+  exportBtn: { backgroundColor: colors.primary, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 16, borderRadius: radius.lg, marginTop: spacing.sm },
+  exportBtnText: { color: '#000', fontWeight: 'bold', fontSize: 14, letterSpacing: 1 }
 });

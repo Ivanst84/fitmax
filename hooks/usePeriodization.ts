@@ -10,6 +10,7 @@ interface PeriodizationData {
   plateau_detectado: boolean;
   mensaje_coach: string;
   dias_en_fase?: number;
+  puede_evolucionar?: boolean;
 }
 
 export function usePeriodization() {

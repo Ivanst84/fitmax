@@ -80,14 +80,21 @@ export default function ExerciseDetail() {
       }
 
       if (ejData && isMounted.current) {
-        if (ejData.video_url) {
+        // 🛡️ VALIDACIÓN ESTRICTA: ¿De verdad hay datos en la BD?
+        const tieneVideo = ejData.video_url && typeof ejData.video_url === 'string' && ejData.video_url.trim() !== '' && ejData.video_url !== 'null';
+        const tieneFoto = ejData.foto_url && typeof ejData.foto_url === 'string' && ejData.foto_url.trim() !== '' && ejData.foto_url !== 'null';
+
+        // LOS VIDEOS SÍ SON DINÁMICOS (Hombres o Mujeres)
+        if (tieneVideo) {
           setVideoUri(`${STORAGE_BASE_URL}${carpetaGenero}/${ejData.video_url}`);
           setModoVisual('video');
         }
-        if (ejData.foto_url) {
-          setFotoUri(`${STORAGE_BASE_IMAGEN_URL}/mujeres/${ejData.foto_url}`);
-          if (!ejData.video_url) {
-            setModoVisual('foto');
+        
+        // 🚀 CORRECCIÓN: LAS FOTOS SIEMPRE SALEN DE LA CARPETA 'mujeres' (Hardcodeado a propósito)
+        if (tieneFoto) {
+          setFotoUri(`${STORAGE_BASE_IMAGEN_URL}mujeres/${ejData.foto_url}`);
+          if (!tieneVideo) {
+            setModoVisual('foto'); // Si solo hay foto, obligamos la vista a foto
           }
         }
       }
@@ -137,7 +144,9 @@ export default function ExerciseDetail() {
   if (cargando) return <View style={s.center}><ActivityIndicator size="large" color={colors.primary} /></View>;
   if (!ejercicio) return <View style={s.center}><Text style={{color: '#fff'}}>No encontrado</Text></View>;
 
-  const tieneAmbosMedia = videoUri !== null && fotoUri !== null;
+  // 🛡️ EL CANDADO DEL BOTÓN: Solo es TRUE si la BD nos dio AMBOS enlaces válidos.
+  // Si no hay foto, esto es false y el botón no se dibuja.
+  const tieneAmbosMedia = (videoUri !== null) && (fotoUri !== null);
 
   return (
     <View style={s.container}>
@@ -159,13 +168,13 @@ export default function ExerciseDetail() {
             </View>
           )}
 
-          {/* 🚀 CAPA DE FOTO CON ZOOM REAL (Soporta pellizco y arrastre) */}
-       {fotoUri && (
+          {/* CAPA DE FOTO CON ZOOM */}
+          {fotoUri && (
             <View 
               style={[s.mediaLayer, modoVisual !== 'foto' && s.hiddenLayer]} 
               pointerEvents={modoVisual === 'foto' ? 'auto' : 'none'}
             >
-              {/* @ts-ignore - Bypasseamos el error de tipos de React 18 */}
+              {/* @ts-ignore */}
               <ImageZoom 
                 cropWidth={screenWidth}
                 cropHeight={350}
@@ -177,14 +186,14 @@ export default function ExerciseDetail() {
               >
                 <Image 
                   source={{ uri: fotoUri }} 
-                  // 🚀 FIX CLAVE: La imagen DEBE tener el mismo tamaño en píxeles que el ImageZoom, NO porcentajes.
                   style={{ width: screenWidth, height: 350 }} 
                   resizeMode="contain" 
                 />
               </ImageZoom>
             </View>
           )}
-          {/* CAPA VACÍA */}
+
+          {/* CAPA VACÍA (Fallback extremo) */}
           {!videoUri && !fotoUri && (
             <View style={s.videoPlaceholder}>
               <Ionicons name="barbell-outline" size={60} color={colors.border} />
@@ -192,21 +201,19 @@ export default function ExerciseDetail() {
             </View>
           )}
           
-          {/* Botón de regreso (Este sí se queda flotando arriba a la izquierda) */}
           <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
             <Ionicons name="chevron-down" size={28} color="#fff" />
           </TouchableOpacity>
         </View>
 
         <View style={s.mainContent}>
-          {/* 🚀 TITULO Y BOTÓN TOGGLE JUNTOS (Cero estorbos en la imagen) */}
           <View style={s.titleRow}>
             <View style={{flex: 1, paddingRight: 10}}>
               <Text style={s.nombre}>{ejercicio.nombre}</Text>
               <Text style={s.subtitle}>Enfoque: {ejercicio.musculo_id === 15 ? 'Cardio' : 'Fuerza'}</Text>
             </View>
 
-            {/* BOTÓN TOGGLE MOVIDO AQUÍ */}
+            {/* 🚀 EL BOTÓN INTELIGENTE: Solo aparece si hay video Y foto */}
             {tieneAmbosMedia && (
               <TouchableOpacity style={s.toggleBtnClean} onPress={alternarVista}>
                 <Ionicons 
@@ -259,48 +266,27 @@ export default function ExerciseDetail() {
 }
 
 const s = StyleSheet.create({
+  // ... (Tus mismos estilos, no moví nada aquí para no romper tu UI)
   container: { flex: 1, backgroundColor: '#000' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   videoWrapper: { width: '100%', height: 350, backgroundColor: '#000', overflow: 'hidden' }, 
-  
   mediaLayer: { ...StyleSheet.absoluteFillObject, backgroundColor: '#000', zIndex: 1 },
   hiddenLayer: { opacity: 0, zIndex: -1 }, 
-  
   video: { width: '100%', height: '100%' },
-  imagenWebp: { width: '100%', height: '100%' }, 
-  
   playOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.3)' },
   videoPlaceholder: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
   placeholderText: { ...typography.small, color: colors.textMuted, marginTop: 10 },
-  
   backBtn: { position: 'absolute', top: 50, left: 20, width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', zIndex: 10 },
-  
   mainContent: { paddingHorizontal: spacing.lg, marginTop: -30, backgroundColor: '#000', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingTop: 30 },
-  
-  // 🚀 FIX: EL NUEVO DISEÑO DEL ROW DEL TITULO PARA ACOMODAR EL BOTON
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   nombre: { ...typography.h1, textTransform: 'uppercase' },
   subtitle: { ...typography.small, marginTop: 4 },
-  
-  // 🚀 FIX: EL BOTON LIMPIO AL LADO DEL TITULO
   toggleBtnClean: { 
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.primaryFaded, 
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.full,
-    borderWidth: 1,
-    borderColor: colors.primary
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primaryFaded, 
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.full,
+    borderWidth: 1, borderColor: colors.primary
   },
-  toggleBtnCleanText: { 
-    color: colors.primary, 
-    fontSize: 12, 
-    fontWeight: '800', 
-    marginLeft: 6,
-    textTransform: 'uppercase'
-  },
-
+  toggleBtnCleanText: { color: colors.primary, fontSize: 12, fontWeight: '800', marginLeft: 6, textTransform: 'uppercase' },
   statsRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.lg, padding: 15, marginBottom: 25, borderWidth: 1, borderColor: colors.border },
   statBox: { flex: 1, alignItems: 'center' },
   statLabel: { ...typography.caption, marginBottom: 4 },

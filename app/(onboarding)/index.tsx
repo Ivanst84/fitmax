@@ -16,7 +16,6 @@ import { colors, spacing, radius, typography } from '../../constants/theme';
 import { useGeminiRoutine } from '../../hooks/useGeminiRoutine';
 
 import PressableCard from '../../components/ui/PressableCard';
-import GhostCalibration from '../../components/ui/GhostCalibration';
 
 const DIAS_SEMANA = [
   { id: 1, label: 'L', full: 'Lunes' },
@@ -28,17 +27,29 @@ const DIAS_SEMANA = [
   { id: 7, label: 'D', full: 'Domingo' }
 ];
 
+// 🚀 MEJORA 1: Eliminado el nivel Avanzado
 const PASOS = [
   { id: 'genero', titulo: '¿Cuál es tu género?', subtitulo: 'Calculamos tu metabolismo basal.', opciones: [{ id: 'hombre', label: 'Hombre', desc: 'Prioridad estándar', icon: 'man-outline' }, { id: 'mujer', label: 'Mujer', desc: 'Mayor recuperación', icon: 'woman-outline' }, { id: 'otro', label: 'Otro', desc: 'Plan balanceado', icon: 'person-outline' }] },
   { id: 'edad', titulo: '¿Qué edad tienes?', subtitulo: 'Ajustamos carga articular.', opciones: [{ id: '18_25', label: '18-25 años', desc: 'Recuperación Full', icon: 'battery-full-outline' }, { id: '26_35', label: '26-35 años', desc: 'Pico de fuerza', icon: 'battery-half-outline' }, { id: '36_45', label: '36-45 años', desc: 'Fuerza y movilidad', icon: 'shield-checkmark-outline' }, { id: '46_mas', label: '46+ años', desc: 'Longevidad', icon: 'heart-outline' }] },
   { id: 'peso', titulo: '¿Cuánto pesas?', subtitulo: 'Vital para calcular calorías e IMC.', custom: true, type: 'input' },
   { id: 'estatura', titulo: '¿Cuánto mides?', subtitulo: 'Para tus palancas musculares.', custom: true, type: 'input' },
-  { id: 'nivel', titulo: '¿Cuál es tu nivel?', subtitulo: 'Técnica y volumen de carga.', opciones: [{ id: 'principiante', label: 'Principiante', desc: '< 6 meses', icon: 'leaf-outline' }, { id: 'intermedio', label: 'Intermedio', desc: '1-2 años', icon: 'barbell-outline' }, { id: 'avanzado', label: 'Avanzado', desc: '> 2 años', icon: 'skull-outline' }] },
+  { id: 'nivel', titulo: '¿Cuál es tu nivel?', subtitulo: 'Técnica y volumen de carga.', opciones: [{ id: 'principiante', label: 'Principiante', desc: '< 6 meses entrenando', icon: 'leaf-outline' }, { id: 'intermedio', label: 'Intermedio', desc: '6+ meses de experiencia', icon: 'barbell-outline' }] },
   { id: 'objetivo', titulo: '¿Tu meta principal?', subtitulo: 'Define rangos de reps y series.', opciones: [{ id: 'perder_peso', label: 'Perder Grasa', desc: 'Déficit y cardio', icon: 'flame-outline' }, { id: 'hipertrofia', label: 'Ganar Músculo', desc: '8-12 reps', icon: 'trending-up-outline' }, { id: 'fuerza', label: 'Fuerza Pura', desc: '1-5 reps', icon: 'fitness-outline' }] },
   { id: 'enfoque', titulo: '¿Qué zona priorizar?', subtitulo: 'Volumen extra en esta área.', opciones: [{ id: 'fullbody', label: 'Cuerpo Completo', desc: 'Armónico', icon: 'body-outline' }, { id: 'superior', label: 'Tren Superior', desc: 'Torso y brazos', icon: 'shirt-outline' }, { id: 'inferior', label: 'Tren Inferior', desc: 'Pierna y glúteo', icon: 'walk-outline' }] },
-  { id: 'frecuencia', titulo: '¿Qué días vas a entrenar?', subtitulo: 'Toca los días que irás al gimnasio.', custom: true, type: 'days' },
+  { id: 'frecuencia', titulo: '¿Qué días entrenarás?', subtitulo: 'Selecciona los días que irás al gimnasio.', custom: true, type: 'days' },
   { id: 'duracion', titulo: '¿Tiempo por sesión?', subtitulo: 'Número de ejercicios.', opciones: [{ id: 30, label: '30 Minutos', desc: 'Sin descansos', icon: 'timer-outline' }, { id: 45, label: '45 Minutos', desc: 'Recomendado', icon: 'hourglass-outline' }, { id: 60, label: '60+ Minutos', desc: 'Completo', icon: 'stopwatch-outline' }] },
   { id: 'equipo', titulo: '¿Dónde entrenarás?', subtitulo: 'Solo ejercicios disponibles.', opciones: [{ id: 'casa', label: 'En Casa', desc: 'Peso corporal', icon: 'home-outline' }, { id: 'mancuernas', label: 'Mancuernas', desc: 'Gym básico', icon: 'disc-outline' }, { id: 'gym', label: 'Gym Completo', desc: 'Máquinas y racks', icon: 'business-outline' }] }
+];
+
+// TIPS PARA MATAR EL TIEMPO EN EL LOADER
+const CURIOSIDADES = [
+  "Analizando biometría...", 
+  "💡 Tip: El músculo crece mientras duermes, no en el gimnasio.",
+  "Estructurando series y repeticiones...",
+  "💡 Tip: Tomar agua entre series mejora tu rendimiento un 15%.",
+  "Ajustando cargas articulares...",
+  "💡 Tip: La constancia vence a la intensidad. ¡No te rindas!",
+  "Casi listo..."
 ];
 
 export default function OnboardingScreen() {
@@ -50,8 +61,6 @@ export default function OnboardingScreen() {
   const [respuestas, setRespuestas] = useState<Record<string, any>>({});
   const [generando, setGenerando] = useState(false);
   const [mensajeCarga, setMensajeCarga] = useState(0);
-  
-  const [mostrarCalibracion, setMostrarCalibracion] = useState(false);
 
   const [pesoInput, setPesoInput] = useState('75');
   const [estaturaInputCM, setEstaturaInputCM] = useState('170');
@@ -63,7 +72,7 @@ export default function OnboardingScreen() {
 
   useEffect(() => {
     if (!generando) return;
-    const interval = setInterval(() => setMensajeCarga(prev => (prev + 1) % 5), 2000);
+    const interval = setInterval(() => setMensajeCarga(prev => (prev + 1) % CURIOSIDADES.length), 3000);
     return () => clearInterval(interval);
   }, [generando]);
 
@@ -82,16 +91,31 @@ export default function OnboardingScreen() {
     avanzar(nuevas);
   };
 
-  const handleCustomNext = () => {
+const handleCustomNext = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const nuevas = { ...respuestas };
     
-    if (infoPaso.id === 'peso') nuevas.peso_kg = parseFloat(pesoInput);
-    if (infoPaso.id === 'estatura') nuevas.altura_cm = parseFloat(estaturaInputCM);
+    if (infoPaso.id === 'peso') {
+      const peso = parseFloat(pesoInput);
+      if (isNaN(peso) || peso < 30 || peso > 350) {
+        Alert.alert("Peso inválido", "Por favor ingresa un peso realista (entre 30 y 350 kg). 🏋️‍♂️");
+        return;
+      }
+      nuevas.peso_kg = peso;
+    }
+
+    if (infoPaso.id === 'estatura') {
+      const estatura = parseFloat(estaturaInputCM);
+      if (isNaN(estatura) || estatura < 100 || estatura > 250) {
+        Alert.alert("Estatura inválida", "Ingresa una estatura entre 100 y 250 cm. 📏");
+        return;
+      }
+      nuevas.altura_cm = estatura;
+    }
     
     if (infoPaso.id === 'frecuencia') {
       if (diasSeleccionados.length < 2) {
-        Alert.alert("Atención", "Por favor selecciona al menos 2 días para ver resultados.");
+        Alert.alert("Atención", "Selecciona al menos 2 días para que valga la pena el sudor.");
         return;
       }
       nuevas.dias_entrenamiento = diasSeleccionados;
@@ -115,100 +139,78 @@ export default function OnboardingScreen() {
     if (pasoActual > 0) setPasoActual(prev => prev - 1);
   };
 
-const finalizarCuestionario = async (perfilFinal: any) => {
-    setMostrarCalibracion(true);
-    setGenerando(false); 
+  const finalizarCuestionario = async (perfilFinal: any) => {
+    setGenerando(true); 
 
     try {
-      // 1. Obtener usuario
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuario no encontrado');
 
-      // 🚀 BARRERA ANTI-DUPLICADOS
-      const { data: rutinasExistentes } = await supabase
-        .from('RUTINAS')
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
+      const { data: rutinasExistentes } = await supabase.from('RUTINAS').select('id').eq('user_id', user.id).limit(1);
 
       if (rutinasExistentes && rutinasExistentes.length > 0) {
-        console.log(' El usuario ya tenía rutinas. Rescatando estado y evitando duplicados.');
         await AsyncStorage.setItem(`onboarding_${user.id}`, 'true');
         router.replace('/(tabs)/home');
         return;
       }
 
-      // 2A. 🚀 FIX ANTI-CRASH: Traer el mapa de músculos primero (Cero ambigüedad)
       const { data: musculosDB } = await supabase.from('CAT_MUSCULOS').select('id, grupo_key');
       const mapaMusculos: Record<number, string> = {};
-      if (musculosDB) {
-        musculosDB.forEach(m => {
-          mapaMusculos[m.id] = m.grupo_key;
-        });
-      }
+      if (musculosDB) musculosDB.forEach(m => { mapaMusculos[m.id] = m.grupo_key; });
 
-      // 2B. Traer ejercicios sin hacer JOINs para que Supabase no se confunda
-      let query = supabase.from('EJERCICIOS').select(`
-        id, 
-        nombre,
-        nivel_id,
-        es_por_tiempo,
-        musculo_id
-      `);
+      let query = supabase.from('EJERCICIOS').select(`id, nombre, nivel_id, es_por_tiempo, musculo_id`);
 
-      if (perfilFinal.equipo === 'casa') {
-        query = query.in('equipo_id', [1]); 
-      } else if (perfilFinal.equipo === 'mancuernas') {
-        query = query.in('equipo_id', [1, 2]); 
-      }
+      if (perfilFinal.equipo === 'casa') query = query.in('equipo_id', [1]); 
+      else if (perfilFinal.equipo === 'mancuernas') query = query.in('equipo_id', [1, 2]); 
 
       const { data: catalogoDB, error: errorCat } = await query;
-      
-      if (errorCat) {
-        console.error(" Error de Supabase:", errorCat.message);
-        throw new Error('No se pudo cargar el catálogo filtrado');
-      }
-      if (!catalogoDB) throw new Error('El catálogo está vacío');
+      if (errorCat || !catalogoDB) throw new Error('Error al cargar catálogo de ejercicios');
 
-      // 2C. Inyectar el grupo muscular a los ejercicios manualmente (Ultra rápido)
       const catalogoConGrupos = catalogoDB.map((ej: any) => ({
-        ...ej,
-        CAT_MUSCULOS: { grupo_key: mapaMusculos[ej.musculo_id] || 'other' }
+        ...ej, CAT_MUSCULOS: { grupo_key: mapaMusculos[ej.musculo_id] || 'other' }
       }));
       
-      let catalogoOptimizado = catalogoConGrupos; // Usamos el nuevo array seguro
+      let catalogoOptimizado = catalogoConGrupos;
 
       if (perfilFinal.enfoque !== 'fullbody') {
         const shuffle = (arr: any[]) => [...arr].sort(() => 0.5 - Math.random());
-        
         const upper = catalogoConGrupos.filter((e: any) => e.CAT_MUSCULOS.grupo_key === 'upper_body');
         const lower = catalogoConGrupos.filter((e: any) => e.CAT_MUSCULOS.grupo_key === 'lower_body');
         const core = catalogoConGrupos.filter((e: any) => e.CAT_MUSCULOS.grupo_key === 'core' || e.CAT_MUSCULOS.grupo_key === 'general');
 
-        if (perfilFinal.enfoque === 'superior') {
-          catalogoOptimizado = [
-            ...shuffle(upper).slice(0, 30), 
-            ...shuffle(lower).slice(0, 10), 
-            ...shuffle(core).slice(0, 10)    
-          ];
-        } else if (perfilFinal.enfoque === 'inferior') {
-          catalogoOptimizado = [
-            ...shuffle(lower).slice(0, 30), 
-            ...shuffle(upper).slice(0, 10), 
-            ...shuffle(core).slice(0, 10)
-          ];
-        }
+        if (perfilFinal.enfoque === 'superior') catalogoOptimizado = [...shuffle(upper).slice(0, 30), ...shuffle(lower).slice(0, 10), ...shuffle(core).slice(0, 10)];
+        else if (perfilFinal.enfoque === 'inferior') catalogoOptimizado = [...shuffle(lower).slice(0, 30), ...shuffle(upper).slice(0, 10), ...shuffle(core).slice(0, 10)];
       }
 
-      // 3. 🧠 LLAMADA A GEMINI 
-      const planFinal = await generateRoutine(perfilFinal, catalogoOptimizado);
+      // 🚀 MEJORA 5: EL ESCUDO ANTI-CAÍDAS (FALLBACK)
+      let planFinal;
+      try {
+        // Intentamos con la Hidra de IA
+        planFinal = await generateRoutine(perfilFinal, catalogoOptimizado);
+      } catch (errorIA) {
+        console.warn("⚠️ Las APIs de IA fallaron. Activando Protocolo de Plantilla Local.");
+        
+        // Generamos una rutina base nosotros mismos mezclando el catálogo
+        const dias = perfilFinal.dias_entrenamiento?.length || 3;
+        planFinal = Array.from({ length: dias }).map((_, i) => {
+           const mezclado = [...catalogoOptimizado].sort(() => 0.5 - Math.random());
+           const calentamiento = mezclado.find(e => e.es_por_tiempo) || mezclado[0];
+           const fuerza = mezclado.filter(e => !e.es_por_tiempo).slice(0, 4);
+           
+           return {
+             dia_nombre: `Fase Adaptación ${i+1}`,
+             descripcion: "Entrenamiento base generado offline.",
+             ejercicios: [
+               { ejercicio_id: calentamiento.id, series: 1, repeticiones: '60', descanso_segundos: 0, es_calentamiento: true },
+               ...fuerza.map(f => ({ ejercicio_id: f.id, series: 3, repeticiones: '12', descanso_segundos: 60, es_calentamiento: false }))
+             ]
+           };
+        });
+      }
 
-      // LÓGICA PURA Y ESTRICTA
       const agendaOrdenada = [...perfilFinal.dias_entrenamiento].sort((a, b) => a - b);
 
-      // 4. Guardar Rutinas y Ejercicios
       await Promise.all(planFinal.map(async (diaIA: any, index: number) => {
-        
         const diaSemanaAsignado = agendaOrdenada[index % agendaOrdenada.length];
         const nombreFinal = `Día ${index + 1} - ${diaIA.dia_nombre}`;
 
@@ -219,7 +221,7 @@ const finalizarCuestionario = async (perfilFinal: any) => {
             nombre: nombreFinal, 
             descripcion: diaIA.descripcion,
             objetivo_id: perfilFinal.objetivo === 'perder_peso' ? 1 : perfilFinal.objetivo === 'hipertrofia' ? 2 : 3,
-            nivel_id: perfilFinal.nivel === 'principiante' ? 1 : perfilFinal.nivel === 'intermedio' ? 2 : 3,
+            nivel_id: perfilFinal.nivel === 'principiante' ? 1 : 2,
             dia_semana: diaSemanaAsignado, 
             duracion_min: perfilFinal.duracion || 45,
             es_personalizada: true
@@ -227,10 +229,7 @@ const finalizarCuestionario = async (perfilFinal: any) => {
           .select()
           .single();
 
-        if (errR) {
-          console.error("Error insertando rutina:", errR);
-          return; 
-        }
+        if (errR) return; 
 
         const ejerciciosAInsertar = diaIA.ejercicios.map((ej: any, idx: number) => ({
           rutina_id: rutinaData.id,
@@ -247,21 +246,11 @@ const finalizarCuestionario = async (perfilFinal: any) => {
         }
       }));
 
-      // 5. Actualizar Perfil de Usuario
       const pesoFinal = parseFloat(perfilFinal.peso_kg) || 75;
       const alturaFinal = parseInt(perfilFinal.altura_cm) || 170;
-
-      let objetivoId = 2; 
-      if (perfilFinal.objetivo === 'perder_peso') objetivoId = 1;
-      if (perfilFinal.objetivo === 'fuerza') objetivoId = 5;
-
-      let nivelId = 1; 
-      if (perfilFinal.nivel === 'intermedio') nivelId = 2;
-      if (perfilFinal.nivel === 'avanzado') nivelId = 3;
-
-      let generoId = 3; 
-      if (perfilFinal.genero === 'hombre') generoId = 1;
-      if (perfilFinal.genero === 'mujer') generoId = 2;
+      let objetivoId = 2; if (perfilFinal.objetivo === 'perder_peso') objetivoId = 1; if (perfilFinal.objetivo === 'fuerza') objetivoId = 5;
+      let nivelId = 1; if (perfilFinal.nivel === 'intermedio') nivelId = 2;
+      let generoId = 3; if (perfilFinal.genero === 'hombre') generoId = 1; if (perfilFinal.genero === 'mujer') generoId = 2;
 
       const añoActual = new Date().getFullYear();
       let añoNacimiento = añoActual - 25; 
@@ -271,52 +260,46 @@ const finalizarCuestionario = async (perfilFinal: any) => {
       if (perfilFinal.edad === '46_mas') añoNacimiento = añoActual - 50;
       
       await supabase.from('USUARIOS').upsert({
-        id: user.id,
-        email: user.email,
-        dias_entrenamiento: perfilFinal.dias_entrenamiento, 
-        peso_kg: pesoFinal,
-        altura_cm: alturaFinal,
-        objetivo: objetivoId,      
-        nivel: nivelId,            
-        genero: generoId,          
-        fecha_nacimiento: `${añoNacimiento}-01-01` 
+        id: user.id, email: user.email, dias_entrenamiento: perfilFinal.dias_entrenamiento, 
+        peso_kg: pesoFinal, altura_cm: alturaFinal, objetivo: objetivoId,      
+        nivel: nivelId, genero: generoId, fecha_nacimiento: `${añoNacimiento}-01-01` 
       });
 
-      // 6. Guardar medida inicial
       await supabase.from('MEDIDAS').insert({
-        user_id: user.id,
-        peso_kg: pesoFinal,
-        fecha: new Date().toISOString()
+        user_id: user.id, peso_kg: pesoFinal, fecha: new Date().toISOString()
       });
 
-      // 7. Marcar Onboarding como completado Y generar Ticket Dorado
+      // 🚀 MEJORA 2: Adiós Ghost Calibration. Transición directa.
       await AsyncStorage.setItem(`onboarding_${user.id}`, 'true');
       await AsyncStorage.setItem(`inauguracion_pendiente_${user.id}`, 'true');
+      
+      setGenerando(false);
+      router.replace('/(tabs)/home');
 
     } catch (e: any) {
-      console.error(' FALLO TOTAL EN SEGUNDO PLANO:', e.message);
-      Alert.alert('¡Ups!', 'Hubo un problema creando tu plan. Por favor, intenta de nuevo.'); 
-      setMostrarCalibracion(false); 
+      console.error(' FALLO CRÍTICO:', e.message);
+      Alert.alert('¡Ups!', 'Hubo un problema de conexión. Por favor, intenta de nuevo.'); 
+      setGenerando(false); 
     }
   };
 
-  if (mostrarCalibracion) {
-    return (
-      <GhostCalibration 
-        onFinish={() => router.replace('/(tabs)/home')} 
-      />
-    );
-  }
-
   if (generando) {
-    const msgs = ["Analizando biometría...", "Consultando catálogo...", "Generando ADN Fitness...", "Ajustando series...", "Finalizando protocolo..."];
     return (
       <View style={s.loaderContainer}>
         <StatusBar barStyle="light-content" />
         <LinearGradient colors={['#000', '#111']} style={StyleSheet.absoluteFill} />
-        <ActivityIndicator size="large" color={colors.primary} style={{transform: [{scale: 1.5}], marginBottom: 30}} />
-        <Text style={s.loaderTitle}>PROCESANDO PROTOCOLO</Text>
-        <Text style={s.loaderSub}>{msgs[mensajeCarga]}</Text>
+        
+        {/* Spinner más estilizado */}
+        <View style={s.spinnerBox}>
+          <ActivityIndicator size="large" color={colors.primary} style={{transform: [{scale: 1.8}]}} />
+        </View>
+
+        <Text style={s.loaderTitle}>ARMANDO PROTOCOLO</Text>
+        
+        {/* Tips dinámicos */}
+        <View style={s.tipContainer}>
+           <Text style={s.loaderSub}>{CURIOSIDADES[mensajeCarga]}</Text>
+        </View>
       </View>
     );
   }
@@ -347,8 +330,22 @@ const finalizarCuestionario = async (perfilFinal: any) => {
     }
 
     if (infoPaso.type === 'days') {
+      // 🚀 MEJORA 3: Lógica inteligente de recomendación
+      const esPesado = respuestas.peso_kg ? parseFloat(respuestas.peso_kg) > 85 : false;
+      const esNovato = respuestas.nivel === 'principiante';
+      const diasRecomendados = (esPesado || esNovato) ? "3 o 4" : "4 a 5";
+
       return (
         <View style={s.customContainer}>
+          
+          {/* Mensaje de Coach Proactivo */}
+          <View style={s.coachAdviceBox}>
+             <Ionicons name="bulb-outline" size={20} color={colors.primary} />
+             <Text style={s.coachAdviceText}>
+                Para tu nivel y peso, recomendamos empezar con <Text style={{fontWeight: 'bold', color: '#fff'}}>{diasRecomendados} días</Text> a la semana.
+             </Text>
+          </View>
+
           <View style={s.daysRow}>
             {DIAS_SEMANA.map((dia) => {
               const isSelected = diasSeleccionados.includes(dia.id);
@@ -448,7 +445,12 @@ const s = StyleSheet.create({
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', marginBottom: 50 },
   bigInput: { color: '#fff', fontSize: 72, fontWeight: '900', borderBottomWidth: 2, borderBottomColor: colors.primary, textAlign: 'center', minWidth: 120 },
   unitText: { color: '#666', fontSize: 24, marginLeft: 10, marginBottom: 15 },
-  daysRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 20, marginTop: 10 },
+  
+  // 🚀 ESTILOS DEL COACH PROACTIVO
+  coachAdviceBox: { flexDirection: 'row', backgroundColor: 'rgba(255, 77, 0, 0.1)', padding: 15, borderRadius: 12, borderWidth: 1, borderColor: colors.primaryFaded, marginBottom: 25, alignItems: 'center', gap: 10 },
+  coachAdviceText: { color: '#bbb', fontSize: 14, flex: 1, lineHeight: 20 },
+  
+  daysRow: { flexDirection: 'row', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 20 },
   dayBubble: { width: 55, height: 55, borderRadius: 30, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#1A1A1A' },
   dayBubbleSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
   dayBubbleText: { color: '#666', fontSize: 18, fontWeight: 'bold' },
@@ -456,7 +458,11 @@ const s = StyleSheet.create({
   daysHelperText: { color: '#666', fontSize: 14, marginBottom: 40 },
   continueBtn: { backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 30, width: '100%', gap: 10 },
   continueBtnText: { color: '#000', fontSize: 18, fontWeight: '900' },
+  
+  // 🚀 ESTILOS DEL LOADER MEJORADO
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  loaderTitle: { fontSize: 20, fontWeight: '900', color: '#fff', letterSpacing: 2, marginBottom: 10 },
-  loaderSub: { fontSize: 14, color: '#666' },
+  spinnerBox: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#111', justifyContent: 'center', alignItems: 'center', marginBottom: 30, borderWidth: 2, borderColor: colors.primaryFaded },
+  loaderTitle: { fontSize: 20, fontWeight: '900', color: '#fff', letterSpacing: 2, marginBottom: 20 },
+  tipContainer: { backgroundColor: '#111', padding: 15, borderRadius: 12, width: '90%', alignItems: 'center', minHeight: 80, justifyContent: 'center', borderWidth: 1, borderColor: '#222' },
+  loaderSub: { fontSize: 15, color: '#aaa', textAlign: 'center', fontStyle: 'italic', lineHeight: 22 },
 });
